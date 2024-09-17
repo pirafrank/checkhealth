@@ -1,5 +1,7 @@
 # 🤒 checkhealth
 
+[![CI](https://github.com/pirafrank/checkhealth/actions/workflows/ci.yml/badge.svg)](https://github.com/pirafrank/checkhealth/actions/workflows/ci.yml)
+
 A cross-platform utility to check your toolbelt for necessary tools.
 
 ## Goals
