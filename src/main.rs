@@ -20,7 +20,10 @@ struct Args {
 
 #[derive(Debug, Deserialize)]
 struct Config {
+    #[serde(default = "Vec::new")]
     commands: Vec<String>,
+    #[serde(default = "Vec::new")]
+    aliases: Vec<String>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
