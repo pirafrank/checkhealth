@@ -93,3 +93,143 @@ fn invalid_name_is_exit_3() {
     let (_dir, path) = config("commands: [\"a; rm -rf x\"]");
     checkhealth().arg("-c").arg(&path).assert().code(3);
 }
+
+/// Directory holding symlinks to a few real tools, so `PATH` is small and predictable.
+fn tool_dir(tools: &[&str]) -> TempDir {
+    let dir = TempDir::new().unwrap();
+    for tool in tools {
+        let source = which::which(tool).expect("tool available on this machine");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(source, dir.path().join(tool)).unwrap();
+    }
+    dir
+}
+
+#[test]
+fn found_commands_exit_0_and_show_the_path() {
+    let tools = tool_dir(&["sh", "ls"]);
+    let (_dir, path) = config("commands: [sh, ls]\n");
+    checkhealth()
+        .arg("-c")
+        .arg(&path)
+        .arg("--no-version")
+        .env("PATH", tools.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("[✓] sh  "))
+        .stdout(predicate::str::contains("2/2 found"));
+}
+
+#[test]
+fn missing_command_exits_1() {
+    let tools = tool_dir(&["sh"]);
+    let (_dir, path) = config("commands: [sh, nonexistent-tool-1]\n");
+    checkhealth()
+        .arg("-c")
+        .arg(&path)
+        .env("PATH", tools.path())
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("[✗] nonexistent-tool-1\n"))
+        .stdout(predicate::str::contains("1/2 found"))
+        .stderr("");
+}
+
+#[test]
+fn output_follows_config_order_and_deduplicates() {
+    let tools = tool_dir(&["sh", "ls", "cat"]);
+    let (_dir, path) = config("commands: [ls, nonexistent-tool-1, sh, ls, cat]\n");
+    let output = checkhealth()
+        .arg("-c")
+        .arg(&path)
+        .arg("--no-version")
+        .env("PATH", tools.path())
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let names: Vec<_> = stdout
+        .lines()
+        .take_while(|l| !l.is_empty())
+        .map(|l| l.split_whitespace().nth(1).unwrap().to_string())
+        .collect();
+    assert_eq!(names, ["ls", "nonexistent-tool-1", "sh", "cat"]);
+}
+
+#[test]
+fn invalid_shell_is_exit_4() {
+    let (_dir, path) = config("commands: [sh]\n");
+    checkhealth()
+        .arg("-c")
+        .arg(&path)
+        .args(["--shell", "fish"])
+        .assert()
+        .code(4)
+        .stdout("")
+        .stderr(predicate::str::contains("unsupported shell `fish`"));
+}
+
+#[test]
+fn nonexistent_shell_path_is_exit_4() {
+    let (_dir, path) = config("commands: [sh]\n");
+    checkhealth()
+        .arg("-c")
+        .arg(&path)
+        .args(["--shell", "/nonexistent/bash"])
+        .assert()
+        .code(4);
+}
+
+#[test]
+fn colour_is_off_when_piped_and_with_no_color() {
+    let tools = tool_dir(&["sh"]);
+    let (_dir, path) = config("commands: [sh]\n");
+    checkhealth()
+        .arg("-c")
+        .arg(&path)
+        .env("PATH", tools.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\x1b[").not());
+    checkhealth()
+        .arg("-c")
+        .arg(&path)
+        .args(["--color", "never"])
+        .env("PATH", tools.path())
+        .env("CLICOLOR_FORCE", "1")
+        .assert()
+        .stdout(predicate::str::contains("\x1b[").not());
+}
+
+#[test]
+fn colour_can_be_forced() {
+    let tools = tool_dir(&["sh"]);
+    let (_dir, path) = config("commands: [sh]\n");
+    checkhealth()
+        .arg("-c")
+        .arg(&path)
+        .args(["--color", "always"])
+        .env("PATH", tools.path())
+        .assert()
+        .stdout(predicate::str::contains("\x1b[32m[✓]"));
+    checkhealth()
+        .arg("-c")
+        .arg(&path)
+        .env("PATH", tools.path())
+        .env("CLICOLOR_FORCE", "1")
+        .assert()
+        .stdout(predicate::str::contains("\x1b[32m[✓]"));
+}
+
+#[test]
+fn no_color_env_beats_forcing_by_environment() {
+    let tools = tool_dir(&["sh"]);
+    let (_dir, path) = config("commands: [sh]\n");
+    checkhealth()
+        .arg("-c")
+        .arg(&path)
+        .env("PATH", tools.path())
+        .env("NO_COLOR", "1")
+        .env("CLICOLOR_FORCE", "1")
+        .assert()
+        .stdout(predicate::str::contains("\x1b[").not());
+}

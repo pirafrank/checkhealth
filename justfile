@@ -39,11 +39,11 @@ build:
 
 # Run all tests
 test:
-  cargo test -- --nocapture
+  cargo test --all-features -- --nocapture
 
 # Run only integration tests
 test-integration:
-  cargo test --test integration -- --nocapture
+  cargo test --all-features --test integration --test panic -- --nocapture
 
 # Get errors and warnings without running the tests
 warnings:
@@ -63,7 +63,7 @@ lint:
 
 # Run the linter on all targets (exclude dependencies)
 lint-all:
-  cargo clippy --all-targets -- --no-deps -D warnings
+  cargo clippy --all-targets --all-features -- --no-deps -D warnings
 
 # Auto-fix compiler suggestions
 cargo-fix:
