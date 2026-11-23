@@ -11,7 +11,7 @@ tooling. Keep this guide synchronized with the code, `justfile`, and CI workflow
 pass/fail line for each, with the resolved path and version of found commands. It is read-only.
 See `README.md` for the user-facing behavior. Decisions to preserve:
 
-- Flat CLI: `checkhealth -c FILE [-s SHELL] [--color] [--no-version] [--timeout]`; `completions`
+- Flat CLI: `checkhealth -c FILE [-s SHELL] [--color] [-e FORMAT] [--no-version] [--timeout]`; `completions`
   is the only subcommand and does not need `--config`.
 - Exit codes are part of the public interface: 0 ok, 1 missing, 2 usage, 3 config, 4 shell,
   5 internal. `src/error.rs` defines them; `main` is the only place that maps errors to codes.

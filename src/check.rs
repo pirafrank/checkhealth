@@ -20,6 +20,15 @@ impl CheckKind {
     /// All kinds, in the order they are reported.
     pub const ALL: [CheckKind; 3] = [CheckKind::Command, CheckKind::Alias, CheckKind::Function];
 
+    /// Stable machine-readable name used by the export formats.
+    pub fn export_name(self) -> &'static str {
+        match self {
+            CheckKind::Command => "command",
+            CheckKind::Alias => "alias",
+            CheckKind::Function => "function",
+        }
+    }
+
     /// Title of the report group holding entries of this kind.
     pub fn heading(self) -> &'static str {
         match self {

@@ -101,13 +101,67 @@ checkhealth completions --shell bash
 | `-c, --config <FILE>` | Path to the YAML config file (required, except for `completions`) |
 | `-s, --shell <SHELL>` | Shell used for aliases and functions: a name or a path (see *Shells*) |
 | `--color <WHEN>` | `auto` (default: colour when stdout is a terminal), `always` or `never` |
+| `-e, --export <FORMAT>` | `text`, `tsv`, `csv` or `json`. Default: `text` on a terminal, `tsv` when stdout is piped or redirected |
 | `--no-version` | Do not run tools to read their version |
 | `--timeout <SECONDS>` | Per-process timeout for version probes (default 2 s) and the shell (default 5 s) |
 | `-v` … `-vvvv`, `-q` | Verbosity (default level: info) |
 | `--help`, `--version` | Help, and long version information |
 
 Results go to stdout, logs and errors to stderr. With `auto`, colour is used when stdout is a
-terminal; `NO_COLOR` turns it off and `CLICOLOR_FORCE` turns it on. `--color` overrides both.
+terminal; `NO_COLOR` turns it off and `CLICOLOR_FORCE` turns it on. `--color` overrides both. An interactive terminal, or `--color always` without `-e`, keeps the coloured text report.
+
+### Exporting for scripts
+
+The report format depends on where stdout goes:
+
+| stdout | Default format |
+|---|---|
+| A terminal | `text`: the coloured report shown above |
+| A pipe or a file | `tsv`: one machine-readable line per entry, no colour |
+
+`-e, --export <text|tsv|csv|json>` overrides this in both directions. `--color always` without
+`-e` also keeps the text report, so `checkhealth -c cfg.yml --color always | less -R` still works.
+
+**TSV** and **CSV** have no header and one line per entry, in report order (commands, aliases,
+functions). The columns are `kind`, `name`, `status`, `path`, `version` and `reason`; cells that
+do not apply are empty. In TSV, tabs, newlines and backslashes inside values are escaped as `\t`,
+`\n` and `\\`. In CSV, cells containing a comma, a double quote or a line break are quoted
+(RFC 4180) and quotes are doubled. Lines end with `\n`, not `\r\n`.
+
+```text
+command	cargo	found	/home/me/.cargo/bin/cargo	cargo 1.85.0	
+command	rust	missing			
+function	paste-image	skipped			not supported on cmd.exe
+```
+
+**JSON** is a single array with the same six fields per object, using `null` where a field does
+not apply:
+
+```json
+[{"kind":"command","name":"cargo","status":"found","path":"/home/me/.cargo/bin/cargo","version":"cargo 1.85.0","reason":null}]
+```
+
+Allowed values and when each field is set:
+
+| Field | Values / content |
+|---|---|
+| `kind` | `command`, `alias` or `function` |
+| `status` | `found`, `missing` or `skipped` |
+| `path` | Resolved location. Only for `found` commands |
+| `version` | First line of `<tool> --version`. Only for `found` entries that were probed (not with `--no-version`) |
+| `reason` | Why the entry was not checked. Only for `skipped` |
+
+Examples:
+
+```sh
+checkhealth -c cfg.yml | awk -F'\t' '$3 == "missing" { print $2 }'   # names of missing tools
+checkhealth -c cfg.yml -e json | jq -r '.[] | select(.status=="missing") | .name'
+checkhealth -c cfg.yml -e text > report.txt                          # human report in a file
+```
+
+The exit codes are the same for every format, and the output is identical on all platforms
+(UTF-8). On Windows PowerShell 5.1, piping to another program re-encodes text; use `pwsh`, or set
+`[Console]::OutputEncoding` to UTF-8 if names are not ASCII.
 
 ## Config file
 

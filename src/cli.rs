@@ -39,6 +39,19 @@ pub enum ColorWhen {
     Never,
 }
 
+/// Output format of the report.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum ExportFormat {
+    /// Human-readable report (the default when stdout is a terminal)
+    Text,
+    /// Tab-separated values, one entry per line (the default when stdout is piped)
+    Tsv,
+    /// Comma-separated values (RFC 4180 quoting), same columns as `tsv`
+    Csv,
+    /// A JSON array with one object per entry
+    Json,
+}
+
 /// Parses a positive, finite number of seconds (fractions allowed).
 fn parse_seconds(value: &str) -> Result<f64, String> {
     let seconds: f64 = value
@@ -102,6 +115,11 @@ pub struct CheckArgs {
     /// When to colour the output
     #[arg(long, value_enum, value_name = "WHEN", default_value_t = ColorWhen::Auto)]
     pub color: ColorWhen,
+
+    /// Output format. Defaults to `text` on a terminal and to `tsv` when stdout is piped.
+    /// TSV and CSV columns: kind, name, status (found|missing|skipped), path, version, reason
+    #[arg(short, long, value_enum, value_name = "FORMAT")]
+    pub export: Option<ExportFormat>,
 
     /// Do not run tools to read their version
     #[arg(long)]

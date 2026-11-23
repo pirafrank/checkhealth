@@ -4,9 +4,10 @@ use std::io::{self, Write};
 
 use anstream::{AutoStream, ColorChoice};
 use anstyle::{AnsiColor, Style};
+use serde::Serialize;
 
 use crate::check::{CheckKind, CheckResult, Status};
-use crate::cli::ColorWhen;
+use crate::cli::{ColorWhen, ExportFormat};
 
 /// Style of the `[✓]` marker.
 const GREEN: Style = AnsiColor::Green.on_default();
@@ -132,6 +133,136 @@ pub fn print(results: &[CheckResult], when: ColorWhen) -> io::Result<()> {
     out.flush()
 }
 
+/// Prints the report to stdout in the given format. `Text` is coloured according to `when`; the
+/// export formats never contain colour.
+pub fn print_as(results: &[CheckResult], format: ExportFormat, when: ColorWhen) -> io::Result<()> {
+    match format {
+        ExportFormat::Text => print(results, when),
+        ExportFormat::Tsv | ExportFormat::Csv | ExportFormat::Json => {
+            let stdout = io::stdout();
+            let mut out = stdout.lock();
+            match format {
+                ExportFormat::Tsv => render_tsv(results, &mut out)?,
+                ExportFormat::Csv => render_csv(results, &mut out)?,
+                _ => render_json(results, &mut out)?,
+            }
+            out.flush()
+        }
+    }
+}
+
+/// One entry of the export formats.
+#[derive(Debug, Serialize)]
+struct ExportRow<'a> {
+    kind: &'static str,
+    name: &'a str,
+    status: &'static str,
+    path: Option<String>,
+    version: Option<&'a str>,
+    reason: Option<&'a str>,
+}
+
+impl<'a> ExportRow<'a> {
+    fn of(result: &'a CheckResult) -> Self {
+        let (status, path, version, reason) = match &result.status {
+            Status::Found { path, version } => (
+                "found",
+                path.as_ref().map(|p| p.to_string_lossy().into_owned()),
+                version.as_deref(),
+                None,
+            ),
+            Status::Missing => ("missing", None, None, None),
+            Status::Skipped(reason) => ("skipped", None, None, Some(reason.as_str())),
+        };
+        Self {
+            kind: result.entry.kind.export_name(),
+            name: &result.entry.name,
+            status,
+            path,
+            version,
+            reason,
+        }
+    }
+}
+
+impl ExportRow<'_> {
+    /// The columns of the tabular formats; empty means "not applicable".
+    fn cells(&self) -> [&str; 6] {
+        [
+            self.kind,
+            self.name,
+            self.status,
+            self.path.as_deref().unwrap_or(""),
+            self.version.unwrap_or(""),
+            self.reason.unwrap_or(""),
+        ]
+    }
+}
+
+/// Escapes a TSV cell so a record always stays on one line with fixed columns.
+fn escape_tsv(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for c in value.chars() {
+        match c {
+            '\\' => escaped.push_str("\\\\"),
+            '\t' => escaped.push_str("\\t"),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            other => escaped.push(other),
+        }
+    }
+    escaped
+}
+
+/// Writes one tab-separated line per result: `kind name status path version reason`, in the same
+/// order as the text report. There is no header and empty cells mean "not applicable". Lines end
+/// with `\n` on every platform.
+pub fn render_tsv(results: &[CheckResult], out: &mut dyn Write) -> io::Result<()> {
+    for result in ordered(results) {
+        let row = ExportRow::of(result);
+        let cells = row.cells();
+        let line: Vec<String> = cells.iter().map(|cell| escape_tsv(cell)).collect();
+        writeln!(out, "{}", line.join("\t"))?;
+    }
+    Ok(())
+}
+
+/// Quotes a CSV cell (RFC 4180) when it contains a comma, a double quote or a line break;
+/// embedded quotes are doubled.
+fn escape_csv(value: &str) -> String {
+    if value.contains([',', '"', '\n', '\r']) {
+        format!("\"{}\"", value.replace('"', "\"\""))
+    } else {
+        value.to_string()
+    }
+}
+
+/// Writes one comma-separated line per result, with the same columns and order as
+/// [`render_tsv`]. There is no header. Lines end with `\n` (not `\r\n`) on every platform.
+pub fn render_csv(results: &[CheckResult], out: &mut dyn Write) -> io::Result<()> {
+    for result in ordered(results) {
+        let row = ExportRow::of(result);
+        let cells = row.cells();
+        let line: Vec<String> = cells.iter().map(|cell| escape_csv(cell)).collect();
+        writeln!(out, "{}", line.join(","))?;
+    }
+    Ok(())
+}
+
+/// Writes the results as one JSON array, in the same order as the text report.
+pub fn render_json(results: &[CheckResult], out: &mut dyn Write) -> io::Result<()> {
+    let rows: Vec<ExportRow> = ordered(results).map(ExportRow::of).collect();
+    serde_json::to_writer(&mut *out, &rows).map_err(io::Error::from)?;
+    out.write_all(b"\n")
+}
+
+/// Results grouped by kind (commands, aliases, functions), keeping the order within a group.
+fn ordered(results: &[CheckResult]) -> impl Iterator<Item = &CheckResult> {
+    CheckKind::ALL
+        .into_iter()
+        .flat_map(move |kind| results.iter().filter(move |r| r.entry.kind == kind))
+}
+
 /// Prints `error: <message>` to stderr. The word `error` is coloured by the same rule as the
 /// report, applied to stderr.
 pub fn print_error(message: &str, when: ColorWhen) {
@@ -243,6 +374,91 @@ mod tests {
                 skipped: vec!["paste-image".to_string()]
             }
         );
+    }
+
+    fn tsv(results: &[CheckResult]) -> String {
+        let mut out = Vec::new();
+        render_tsv(results, &mut out).unwrap();
+        String::from_utf8(out).unwrap()
+    }
+
+    #[test]
+    fn tsv_has_one_line_per_entry_with_six_columns() {
+        assert_eq!(
+            tsv(&sample()),
+            "command\tcargo\tfound\t/bin/cargo\tcargo 1.85.0\t\n\
+             command\trust\tmissing\t\t\t\n\
+             function\tpaste-image\tskipped\t\t\tnot supported on cmd.exe\n"
+        );
+    }
+
+    #[test]
+    fn tsv_escapes_separators_and_follows_group_order() {
+        let results = vec![
+            result_of(CheckKind::Function, "f", Status::Missing),
+            result(
+                "a",
+                Status::Found {
+                    path: None,
+                    version: Some("v1\tx\ny\\z".into()),
+                },
+            ),
+        ];
+        assert_eq!(
+            tsv(&results),
+            "command\ta\tfound\t\tv1\\tx\\ny\\\\z\t\nfunction\tf\tmissing\t\t\t\n"
+        );
+    }
+
+    #[test]
+    fn tsv_of_nothing_is_empty() {
+        assert_eq!(tsv(&[]), "");
+    }
+
+    fn csv(results: &[CheckResult]) -> String {
+        let mut out = Vec::new();
+        render_csv(results, &mut out).unwrap();
+        String::from_utf8(out).unwrap()
+    }
+
+    #[test]
+    fn csv_has_the_same_columns_as_tsv() {
+        assert_eq!(
+            csv(&sample()),
+            "command,cargo,found,/bin/cargo,cargo 1.85.0,\n\
+             command,rust,missing,,,\n\
+             function,paste-image,skipped,,,not supported on cmd.exe\n"
+        );
+    }
+
+    #[test]
+    fn csv_quotes_commas_quotes_and_line_breaks() {
+        let results = vec![result(
+            "a",
+            Status::Found {
+                path: None,
+                version: Some("v1, \"beta\"\nline2".into()),
+            },
+        )];
+        assert_eq!(
+            csv(&results),
+            "command,a,found,,\"v1, \"\"beta\"\"\nline2\",\n"
+        );
+    }
+
+    #[test]
+    fn json_is_an_array_of_objects() {
+        let mut out = Vec::new();
+        render_json(&sample(), &mut out).unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(value.as_array().unwrap().len(), 3);
+        assert_eq!(value[0]["kind"], "command");
+        assert_eq!(value[0]["status"], "found");
+        assert_eq!(value[0]["path"], "/bin/cargo");
+        assert_eq!(value[1]["status"], "missing");
+        assert!(value[1]["path"].is_null());
+        assert_eq!(value[2]["reason"], "not supported on cmd.exe");
+        assert!(out.ends_with(b"\n"));
     }
 
     #[test]

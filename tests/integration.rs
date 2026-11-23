@@ -9,6 +9,14 @@ fn checkhealth() -> Command {
     Command::cargo_bin("checkhealth").expect("binary builds")
 }
 
+/// Returns the binary under test, asking for the human-readable report. Piped stdout otherwise
+/// defaults to TSV.
+fn text_report() -> Command {
+    let mut cmd = checkhealth();
+    cmd.args(["-e", "text"]);
+    cmd
+}
+
 /// Writes `content` to `config.yml` in a fresh temp dir; keep the dir alive while in use.
 fn config(content: &str) -> (TempDir, std::path::PathBuf) {
     let dir = TempDir::new().unwrap();
@@ -110,7 +118,7 @@ fn tool_dir(tools: &[&str]) -> TempDir {
 fn found_commands_exit_0_and_show_the_path() {
     let tools = tool_dir(&["sh", "ls"]);
     let (_dir, path) = config("commands: [sh, ls]\n");
-    checkhealth()
+    text_report()
         .arg("-c")
         .arg(&path)
         .arg("--no-version")
@@ -126,7 +134,7 @@ fn found_commands_exit_0_and_show_the_path() {
 fn missing_command_exits_1() {
     let tools = tool_dir(&["sh"]);
     let (_dir, path) = config("commands: [sh, nonexistent-tool-1]\n");
-    checkhealth()
+    text_report()
         .arg("-c")
         .arg(&path)
         .env("PATH", tools.path())
@@ -142,7 +150,7 @@ fn missing_command_exits_1() {
 fn output_follows_config_order_and_deduplicates() {
     let tools = tool_dir(&["sh", "ls", "cat"]);
     let (_dir, path) = config("commands: [ls, nonexistent-tool-1, sh, ls, cat]\n");
-    let output = checkhealth()
+    let output = text_report()
         .arg("-c")
         .arg(&path)
         .arg("--no-version")
@@ -188,14 +196,14 @@ fn nonexistent_shell_path_is_exit_4() {
 fn colour_is_off_when_piped_and_with_no_color() {
     let tools = tool_dir(&["sh"]);
     let (_dir, path) = config("commands: [sh]\n");
-    checkhealth()
+    text_report()
         .arg("-c")
         .arg(&path)
         .env("PATH", tools.path())
         .assert()
         .success()
         .stdout(predicate::str::contains("\x1b[").not());
-    checkhealth()
+    text_report()
         .arg("-c")
         .arg(&path)
         .args(["--color", "never"])
@@ -210,14 +218,14 @@ fn colour_is_off_when_piped_and_with_no_color() {
 fn colour_can_be_forced() {
     let tools = tool_dir(&["sh"]);
     let (_dir, path) = config("commands: [sh]\n");
-    checkhealth()
+    text_report()
         .arg("-c")
         .arg(&path)
         .args(["--color", "always"])
         .env("PATH", tools.path())
         .assert()
         .stdout(predicate::str::contains("\x1b[32m[✓]"));
-    checkhealth()
+    text_report()
         .arg("-c")
         .arg(&path)
         .env("PATH", tools.path())
@@ -231,7 +239,7 @@ fn colour_can_be_forced() {
 fn no_color_env_beats_forcing_by_environment() {
     let tools = tool_dir(&["sh"]);
     let (_dir, path) = config("commands: [sh]\n");
-    checkhealth()
+    text_report()
         .arg("-c")
         .arg(&path)
         .env("PATH", tools.path())
@@ -263,7 +271,7 @@ mod probes {
     fn version_is_shown_next_to_the_path() {
         let path_dir = fake_path(&[("good", "echo 'good 1.0'")]);
         let (_dir, config) = config("commands: [good]\n");
-        checkhealth()
+        text_report()
             .arg("-c")
             .arg(&config)
             .env("PATH", path_dir.path())
@@ -293,7 +301,7 @@ mod probes {
         let path_dir = fake_path(&[("fails", "exit 3"), ("slow", "sleep 10"), ("flood", "yes")]);
         let (_dir, config) = config("commands: [fails, slow, flood]\n");
         let started = Instant::now();
-        checkhealth()
+        text_report()
             .arg("-c")
             .arg(&config)
             .args(["--timeout", "0.3"])
@@ -326,7 +334,7 @@ mod shells {
         let home = home();
         let (_dir, path) =
             config("commands: [sh]\naliases: [ll, nope-alias]\nfunctions: [yy, nope-func]\n");
-        checkhealth()
+        text_report()
             .arg("-c")
             .arg(&path)
             .args(["--shell", shell, "--no-version"])
@@ -368,7 +376,7 @@ mod shells {
     #[test]
     fn sh_skips_aliases_and_functions_without_failing() {
         let (_dir, path) = config("commands: [sh]\naliases: [ll]\nfunctions: [yy]\n");
-        checkhealth()
+        text_report()
             .arg("-c")
             .arg(&path)
             .args(["--shell", "sh", "--no-version"])
@@ -398,7 +406,7 @@ mod shells {
         let (_dir, shell) = fake_shell("sleep 30");
         let (_cfg, path) = config("commands: [sh]\naliases: [ll]\nfunctions: [yy]\n");
         let started = Instant::now();
-        checkhealth()
+        text_report()
             .arg("-c")
             .arg(&path)
             .arg("--shell")
@@ -460,5 +468,98 @@ mod shells {
         assert!(
             !shell.with_extension("ran").exists() && !shell.with_file_name("bash.ran").exists()
         );
+    }
+}
+
+#[cfg(unix)]
+mod export {
+    use super::*;
+
+    fn found_and_missing() -> (TempDir, TempDir, std::path::PathBuf) {
+        let tools = tool_dir(&["sh"]);
+        let (dir, path) = config("commands: [sh, absent-tool]\n");
+        (tools, dir, path)
+    }
+
+    #[test]
+    fn piped_output_defaults_to_tsv() {
+        let (tools, _dir, path) = found_and_missing();
+        let good = tools.path().join("sh");
+        checkhealth()
+            .env("PATH", tools.path())
+            .arg("-c")
+            .arg(&path)
+            .arg("--no-version")
+            .assert()
+            .code(1)
+            .stdout(format!(
+                "command\tsh\tfound\t{}\t\t\ncommand\tabsent-tool\tmissing\t\t\t\n",
+                good.display()
+            ));
+    }
+
+    #[test]
+    fn csv_export_has_the_same_columns_as_tsv() {
+        let (tools, _dir, path) = found_and_missing();
+        let sh = tools.path().join("sh");
+        checkhealth()
+            .env("PATH", tools.path())
+            .arg("-c")
+            .arg(&path)
+            .args(["--no-version", "-e", "csv"])
+            .assert()
+            .code(1)
+            .stdout(format!(
+                "command,sh,found,{},,\ncommand,absent-tool,missing,,,\n",
+                sh.display()
+            ));
+    }
+
+    #[test]
+    fn json_export_is_parsable_and_keeps_the_exit_code() {
+        let (tools, _dir, path) = found_and_missing();
+        let output = checkhealth()
+            .env("PATH", tools.path())
+            .arg("-c")
+            .arg(&path)
+            .args(["--no-version", "-e", "json"])
+            .assert()
+            .code(1)
+            .get_output()
+            .stdout
+            .clone();
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.starts_with('['), "{text}");
+        assert!(text.contains(r#""name":"sh","status":"found""#), "{text}");
+        assert!(
+            text.contains(r#""name":"absent-tool","status":"missing""#),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn forcing_colour_without_export_keeps_the_coloured_report() {
+        let (tools, _dir, path) = found_and_missing();
+        checkhealth()
+            .env("PATH", tools.path())
+            .arg("-c")
+            .arg(&path)
+            .args(["--no-version", "--color", "always"])
+            .assert()
+            .code(1)
+            .stdout(predicate::str::contains("\x1b[32m[✓]"));
+    }
+
+    #[test]
+    fn export_has_no_colour_even_when_forced() {
+        let (tools, _dir, path) = found_and_missing();
+        checkhealth()
+            .env("PATH", tools.path())
+            .arg("-c")
+            .arg(&path)
+            .args(["--no-version", "--color", "always", "-e", "tsv"])
+            .assert()
+            .code(1)
+            .stdout(predicate::str::contains("\x1b").not());
     }
 }
