@@ -21,3 +21,20 @@ fn panic_exits_with_internal_error() {
                 .and(predicate::str::contains("/issues")),
         );
 }
+
+#[cfg(unix)]
+#[test]
+fn panic_on_a_worker_thread_exits_with_internal_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.yml");
+    std::fs::write(&config, "commands: [sh]\n").unwrap();
+    Command::cargo_bin("checkhealth")
+        .unwrap()
+        .arg("-c")
+        .arg(&config)
+        .env("CHECKHEALTH_TEST_PANIC", "thread")
+        .assert()
+        .code(5)
+        .stdout("")
+        .stderr(predicate::str::contains("induced on a worker thread"));
+}

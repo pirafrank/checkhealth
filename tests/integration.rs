@@ -294,7 +294,7 @@ mod probes {
             .assert()
             .success()
             .stdout(predicate::str::contains("3/3 found"));
-        // Sequential probing until Phase 4: a few probes at most `timeout` each.
-        assert!(started.elapsed() < Duration::from_secs(5));
+        // Probes run in parallel, so the total stays near one timeout.
+        assert!(started.elapsed() < Duration::from_secs(1));
     }
 }

@@ -10,10 +10,12 @@ mod constants;
 mod error;
 mod process;
 mod report;
+mod runner;
 mod shell;
 mod version;
 
 use std::panic::PanicHookInfo;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
@@ -21,10 +23,11 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use log::{LevelFilter, debug};
 
-use crate::check::{CheckResult, SearchEnv, Status, check_command, plan};
+use crate::check::{SearchEnv, Status, plan};
 use crate::cli::{Cli, ColorWhen, Commands};
 use crate::config::Config;
 use crate::error::{ExitCode, exit_code_of};
+use crate::runner::Runner;
 use crate::shell::ShellSpec;
 
 /// Set when debug logging is on, so the panic hook can add the location.
@@ -81,7 +84,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
     debug!("Loaded config: {config:?}");
 
     #[cfg(feature = "test-hooks")]
-    if std::env::var_os("CHECKHEALTH_TEST_PANIC").is_some() {
+    if std::env::var("CHECKHEALTH_TEST_PANIC").is_ok_and(|v| v != "thread") {
         panic!("induced by CHECKHEALTH_TEST_PANIC");
     }
 
@@ -91,34 +94,18 @@ fn run(cli: Cli) -> Result<ExitCode> {
     }
     debug!("Shell: {shell:?}");
 
-    let probe_timeout = (!args.no_version).then(|| {
-        args.timeout
-            .map_or(version::DEFAULT_TIMEOUT, Duration::from_secs_f64)
-    });
+    let probe_timeout = args
+        .timeout
+        .map_or(version::DEFAULT_TIMEOUT, Duration::from_secs_f64);
+    let probe = |path: &Path| version::probe(path, probe_timeout);
     let search_env = SearchEnv::from_process();
-    let results: Vec<CheckResult> = plan(&config)
-        .into_iter()
-        .map(|entry| {
-            let status = match entry.kind {
-                check::CheckKind::Command => {
-                    let mut status = check_command(&search_env, &entry.name);
-                    if let (
-                        Status::Found {
-                            path: Some(path),
-                            version,
-                        },
-                        Some(timeout),
-                    ) = (&mut status, probe_timeout)
-                    {
-                        *version = version::probe(path, timeout);
-                    }
-                    status
-                }
-                _ => Status::Skipped("not implemented yet".to_string()),
-            };
-            CheckResult { entry, status }
-        })
-        .collect();
+    let runner = Runner {
+        search: &search_env,
+        probe: (!args.no_version).then_some(&probe as runner::Probe<'_>),
+        shell: &runner::UnavailableShell,
+        threads: runner::default_threads(),
+    };
+    let results = runner.run(&plan(&config));
 
     report::print(&results, args.color).context("failed to write the report")?;
 
