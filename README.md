@@ -3,7 +3,11 @@
 
 # 🤒 checkhealth
 
-A cross-platform utility to check your toolbelt for necessary tools.
+You add tools to your toolbelt. You want to check if everything is in place. You want to
+`checkhealth`.
+
+It works for you, and for the sandboxed AI agents you hand a toolbelt to: before an agent starts,
+find out which tools it can actually use.
 
 It reads a list of names from a YAML file and prints a pass/fail line for each one, with the
 resolved location and version where available. It is read-only: it never installs, updates or
@@ -25,6 +29,23 @@ fixes anything.
 
 - Check the tools in your toolbelt
 - Tell you what is installed, which version, and where
+- Assess the tools available inside a sandbox, container or CI job, for humans and AI agents alike
+
+## Use with AI agents
+
+Agents fail in odd ways when a tool is missing: they retry, improvise, or hallucinate output.
+Run `checkhealth` inside the sandbox first and know what is really there.
+
+```sh
+checkhealth -c agent-tools.yml -e json    # machine-readable inventory for the agent or its harness
+```
+
+- **Preflight:** exit code `1` means something is missing, so a harness can refuse to start the run.
+- **Prompt context:** feed the JSON (names, paths, versions) to the agent so it plans with the
+  tools it has, not the ones it assumes.
+- **Compare environments:** same config, different sandboxes, diff the output.
+
+It stays read-only, so it is safe to run in locked-down environments.
 
 ## Non-goals
 
