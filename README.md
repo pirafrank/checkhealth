@@ -1,7 +1,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![CI](https://github.com/pirafrank/checkhealth/actions/workflows/ci.yml/badge.svg)](https://github.com/pirafrank/checkhealth/actions/workflows/ci.yml)
 
-# checkhealth
+# 🤒 checkhealth
 
 A cross-platform utility to check your toolbelt for necessary tools.
 
@@ -88,6 +88,24 @@ Each release ships a signed checksums manifest, an SBOM and a build provenance a
 
 To build from source (Rust 1.85 or later): `cargo install --path .`
 
+## Config file
+
+```yaml
+commands:   # executables found on PATH
+  - cargo
+  - git
+aliases:    # shell aliases
+  - ll
+functions:  # shell functions
+  - yy
+```
+
+All keys are optional and default to an empty list. Unknown keys are an error, so a typo such as
+`command:` is not silently ignored. Names must be non-empty, must not start with `-`, and may
+contain only letters, digits and `_ - . + @ : ,`: no whitespace or shell metacharacters. A name
+listed twice within a kind is checked once. [`config.sample.yml`](config.sample.yml) is a working
+example.
+
 ## Usage
 
 ```sh
@@ -108,78 +126,39 @@ checkhealth completions --shell bash
 | `--help`, `--version` | Help, and long version information |
 
 Results go to stdout, logs and errors to stderr. With `auto`, colour is used when stdout is a
-terminal; `NO_COLOR` turns it off and `CLICOLOR_FORCE` turns it on. `--color` overrides both. An interactive terminal, or `--color always` without `-e`, keeps the coloured text report.
+terminal; `NO_COLOR` turns it off and `CLICOLOR_FORCE` turns it on. `--color` overrides both.
+An interactive terminal, or `--color always` without `-e`, keeps the coloured text report.
+
+## Supported shells
+
+| Platform | Supported shells |
+|---|---|
+| Unix | `zsh`, `bash`, `sh` |
+| Windows | `cmd.exe`, PowerShell 5 (`powershell.exe`), PowerShell 7+ (`pwsh.exe`) |
+
+Without `--shell`, checkhealth uses `powershell.exe` on Windows; on Unix it uses `zsh` if
+`$SHELL` contains "zsh", `bash` if `$SHELL` is set to anything else, and `sh` if it is unset.
+An unsupported or non-existent shell is an error (exit code 4).
+
+Commands are looked up on `PATH` in-process, without a shell. Aliases and functions need a
+shell: checkhealth starts it **once** for all of them, as an interactive shell (`zsh -i`,
+`bash -i`; PowerShell with its profile loaded), so that your rc files are read. Caveats:
+
+- Detection depends on your rc files being loadable by a non-login interactive shell. An alias
+  defined only in a login file, or behind an interactivity check that fails here, is reported
+  as missing.
+- `sh` has no portable rc loading, and `cmd.exe` macros (`doskey`) are invisible to a child
+  process: aliases and functions are reported as `skipped`, not guessed.
+- The shell gets 5 s (`--timeout`). On timeout all aliases and functions are `skipped
+  (shell timed out)` and the run continues.
+- Stderr noise from rc files is discarded unless you pass `-vv` or higher.
 
 ### Exporting for scripts
 
-The report format depends on where stdout goes:
+Piped output is machine-readable TSV by default, and `-e` picks `text`, `tsv`, `csv` or `json`.
 
-| stdout | Default format |
-|---|---|
-| A terminal | `text`: the coloured report shown above |
-| A pipe or a file | `tsv`: one machine-readable line per entry, no colour |
-
-`-e, --export <text|tsv|csv|json>` overrides this in both directions. `--color always` without
-`-e` also keeps the text report, so `checkhealth -c cfg.yml --color always | less -R` still works.
-
-**TSV** and **CSV** have no header and one line per entry, in report order (commands, aliases,
-functions). The columns are `kind`, `name`, `status`, `path`, `version` and `reason`; cells that
-do not apply are empty. In TSV, tabs, newlines and backslashes inside values are escaped as `\t`,
-`\n` and `\\`. In CSV, cells containing a comma, a double quote or a line break are quoted
-(RFC 4180) and quotes are doubled. Lines end with `\n`, not `\r\n`.
-
-```text
-command	cargo	found	/home/me/.cargo/bin/cargo	cargo 1.85.0	
-command	rust	missing			
-function	paste-image	skipped			not supported on cmd.exe
-```
-
-**JSON** is a single array with the same six fields per object, using `null` where a field does
-not apply:
-
-```json
-[{"kind":"command","name":"cargo","status":"found","path":"/home/me/.cargo/bin/cargo","version":"cargo 1.85.0","reason":null}]
-```
-
-Allowed values and when each field is set:
-
-| Field | Values / content |
-|---|---|
-| `kind` | `command`, `alias` or `function` |
-| `status` | `found`, `missing` or `skipped` |
-| `path` | Resolved location. Only for `found` commands |
-| `version` | First line of `<tool> --version`. Only for `found` entries that were probed (not with `--no-version`) |
-| `reason` | Why the entry was not checked. Only for `skipped` |
-
-Examples:
-
-```sh
-checkhealth -c cfg.yml | awk -F'\t' '$3 == "missing" { print $2 }'   # names of missing tools
-checkhealth -c cfg.yml -e json | jq -r '.[] | select(.status=="missing") | .name'
-checkhealth -c cfg.yml -e text > report.txt                          # human report in a file
-```
-
-The exit codes are the same for every format, and the output is identical on all platforms
-(UTF-8). On Windows PowerShell 5.1, piping to another program re-encodes text; use `pwsh`, or set
-`[Console]::OutputEncoding` to UTF-8 if names are not ASCII.
-
-## Config file
-
-```yaml
-commands:   # executables found on PATH
-  - cargo
-  - git
-aliases:    # shell aliases
-  - ll
-functions:  # shell functions
-  - yy
-```
-
-All keys are optional and default to an empty list. Unknown keys are an error, so a typo such as
-`command:` is not silently ignored. Names must be non-empty, must not start with `-`, and may
-contain only letters, digits and `_ - . + @ : ,`: no whitespace or shell metacharacters. A name
-listed twice within a kind is checked once. [`config.sample.yml`](config.sample.yml) is a working
-example.
+See [docs/exporting.md](docs/exporting.md) for the formats, the fields and examples for zsh, bash
+and PowerShell.
 
 ## How it works
 
@@ -238,30 +217,6 @@ summary line is printed. Per-entry problems (a probe timeout, a shell timeout, a
 alias check) are shown as `skipped` in the report and never change the exit code. The numbers
 are stable across releases.
 
-## Supported shells
-
-| Platform | Supported shells |
-|---|---|
-| Unix | `zsh`, `bash`, `sh` |
-| Windows | `cmd.exe`, PowerShell 5 (`powershell.exe`), PowerShell 7+ (`pwsh.exe`) |
-
-Without `--shell`, checkhealth uses `powershell.exe` on Windows; on Unix it uses `zsh` if
-`$SHELL` contains "zsh", `bash` if `$SHELL` is set to anything else, and `sh` if it is unset.
-An unsupported or non-existent shell is an error (exit code 4).
-
-Commands are looked up on `PATH` in-process, without a shell. Aliases and functions need a
-shell: checkhealth starts it **once** for all of them, as an interactive shell (`zsh -i`,
-`bash -i`; PowerShell with its profile loaded), so that your rc files are read. Caveats:
-
-- Detection depends on your rc files being loadable by a non-login interactive shell. An alias
-  defined only in a login file, or behind an interactivity check that fails here, is reported
-  as missing.
-- `sh` has no portable rc loading, and `cmd.exe` macros (`doskey`) are invisible to a child
-  process: aliases and functions are reported as `skipped`, not guessed.
-- The shell gets 5 s (`--timeout`). On timeout all aliases and functions are `skipped
-  (shell timed out)` and the run continues.
-- Stderr noise from rc files is discarded unless you pass `-vv` or higher.
-
 ## Versions: this runs your tools
 
 For every command found, checkhealth runs `<tool> --version` (stdin closed, 2 s timeout, output
@@ -272,19 +227,96 @@ omits the version; it never changes the result.
 
 ## Performance
 
-Work runs concurrently: the shell starts first on its own thread while commands are looked up
-and probed by a pool of at most 8 threads, so the total time is about the slower of the two.
-Without aliases or functions no shell is started at all. Typical numbers (see
-[`bench/`](bench)): `--version` in about 1 ms, 50 commands without versions in about 2 ms, with
-versions in about 20 ms.
+The expensive part of a run is starting processes: one shell for all aliases and functions, and one
+`<tool> --version` per command found. Everything else (reading the config, looking names up on
+`PATH`, printing) takes microseconds. checkhealth is built so those processes overlap instead of
+queueing, with plain threads from the standard library: no async runtime and no thread-pool crate.
 
-Run the end-to-end benchmarks with [hyperfine](https://github.com/sharkdp/hyperfine):
+```text
+t0 ──► shell thread ────────────[ one `<shell> -i -c ...` for all aliases/functions ]──────┐
+ │                                                                                         ├─► join ─► report
+ └──► main thread: look up every command on PATH ─► probe pool (up to 8 workers) ──────────┘
+```
+
+- **The shell starts first.** It is the slowest part (it loads your rc files), so it is spawned on
+  its own thread before anything else and runs while the rest of the work happens. If the config
+  has no aliases or functions, no shell is started at all.
+- **Lookups are cheap and sequential.** Commands are resolved in-process by walking `PATH`, one
+  pass per name, with no process spawned. Duplicate names are checked once.
+- **Probes run on a bounded pool.** The found commands are probed by `min(CPU cores, 8)` workers
+  that pull the next job from a shared counter, so a slow tool never holds up the others and
+  there is no queue or channel to manage. Cores beyond 8 add nothing: probes are short, and an
+  unbounded pool would only add spawn pressure.
+- **Order is deterministic.** Each result is stored at the index of its entry, so the report
+  follows the config order whatever order things finished in.
+- **The total is the slower path, not the sum.** Wall time is about `max(shell, lookups + probes)`
+  plus a few milliseconds, not their sum. With 50 commands and 10 aliases, the shell time is
+  hidden behind the probes, or the other way round.
+- **Slow or misbehaving children are contained.** Every child gets no stdin, a timeout (2 s for
+  probes, 5 s for the shell; see `--timeout`) and a cap on the output kept (4 KiB for probes). On
+  timeout, or when a tool floods its output, the child is killed, together with its whole process
+  group on Unix so version-manager shims do not leave orphans behind. A timed-out probe only
+  loses the version of that tool. A timed-out shell turns its aliases and functions into
+  `skipped`, not `missing`, and the run still completes. In the worst case, when every probe
+  hangs, the time is bounded by `ceil(found commands / workers) × timeout`.
+- **A panic never hangs the run.** A panic on any thread is reported and exits with code 5.
+
+`--no-version` removes the probes entirely, which is the fastest mode and runs no tool from your
+config.
+
+## Benchmarks
+
+These are the numbers I got on my machine, running checkhealth against my own
+[dotfiles config](https://github.com/pirafrank/dotfiles/blob/d1d8de45e0a1226a8251c21c81424966b2bae407/checkhealth/config.yml): 139
+entries (87 commands, 26 aliases, 26 functions) on my real `PATH`, with my real interactive zsh and
+rc files. The machine is an 11th Gen Intel Core i7-11800H with 32GB RAM running Ubuntu 24.04 on
+WSL2 (Linux 6.18, having 4 cores and 16GB RAM made available), with zsh 5.9, hyperfine 1.18.0 and
+a 1281 KiB release binary, measured on 2026-11-23.
+
+Each result is 30 runs after 5 warm-up runs. Treat them as orders of magnitude: your machine, rc
+files and `PATH` will differ.
+
+| Run | Mean ± σ | p95 |
+|---|---|---|
+| `checkhealth -c config.yml` | 1083 ± 57 ms | 1168 ms |
+| `checkhealth -c config.yml --no-version` | 199 ± 7 ms | 210 ms |
+| `zsh -ic exit` (the floor for the alias/function check) | 196 ± 12 ms | 209 ms |
+
+What the numbers say:
+
+- **Without versions, the shell is the whole cost.** `--no-version` takes as long as just starting
+  my interactive zsh and exiting (about 200 ms, mostly my rc files). Looking up 87 commands on
+  `PATH` is lost in that noise, and checking all 52 aliases and functions costs one shell start.
+- **Versions cost about 0.9 s here, and a few tools set the pace.** Run one after another, the
+  `--version` of the config names that resolve to a binary adds up to about 3.5 s. With the probe pool it is about
+  0.9 s of extra wall time, a bit under the slowest single tool: `cs` alone takes about 1.2 s, then
+  `code` about 450 ms and `serverless` about 400 ms. Adding cores would not help much; skipping
+  those tools or using `--no-version` would.
+- **Everyday use:** my whole toolbelt, 139 entries, is checked in about a second with versions,
+  and in about 0.2 s without.
+
+To measure your own config the same way (a non-zero exit code only means something is missing):
+
+```sh
+hyperfine -N -i --warmup 5 --runs 30 \
+  'checkhealth -c config.yml' 'checkhealth -c config.yml --no-version' 'zsh -ic exit'
+```
+
+For more, [`bench/`](bench) has synthetic scenarios with a controlled `PATH` and pass/fail targets
+(startup, 50 commands, aliases, overlap, hanging probes), driven by `bench/run.sh`; the targets are
+in [`bench/targets.json`](bench/targets.json). Run them with
+[hyperfine](https://github.com/sharkdp/hyperfine):
 
 ```sh
 just bench-e2e      # run and print a summary
 just bench-check    # fail if a target in bench/targets.json is missed
 just bench-baseline # save bench/baseline.json
 ```
+
+The [Bench workflow](.github/workflows/bench.yml) runs `just bench-check` on Ubuntu and uploads the
+raw hyperfine JSON as an artifact. It is not part of pull request checks, since wall-clock numbers
+on shared runners are noisy. It runs on demand and on release tags. See the workflow and
+`bench/run.sh` for the full pipeline.
 
 ## Development
 
