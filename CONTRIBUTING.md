@@ -63,7 +63,7 @@ Enhancement suggestions are tracked as GitHub issues. Create an issue on the rep
 * **Provide specific examples to demonstrate the steps**.
 * **Describe the current behavior** and **explain which behavior you expected to see instead** and why.
 * **Include screenshots and animated GIFs** which help demonstrate the suggestion.
-* **Explain why this enhancement would be useful** to most users of the template.
+* **Explain why this enhancement would be useful** to most users of checkhealth.
 * **Specify which version of checkhealth you're using.**
 * **Specify version info, and the name and version of your OS.**. Version info can be obtained by running `checkhealth --version`.
 

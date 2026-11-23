@@ -38,7 +38,7 @@ impl Config {
     /// Parses and validates a config from YAML text. An empty document is an empty config.
     pub fn parse(text: &str) -> Result<Self> {
         let config: Option<Config> =
-            serde_yaml_ng::from_str(text).context("invalid YAML or unknown key")?;
+            serde_norway::from_str(text).context("invalid YAML or unknown key")?;
         let config = config.unwrap_or_default();
         config.validate()?;
         Ok(config)

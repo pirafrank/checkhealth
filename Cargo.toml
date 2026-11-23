@@ -43,11 +43,12 @@ clap-verbosity-flag = "3.0.3"
 anyhow = "1.0"
 serde = { version = "1", features = ["derive"] }
 # YAML: serde_yaml (archived) and serde_yml (unmaintained, unsound) are excluded. Candidates checked
-# on 2026-11-23: serde-saphyr (actively maintained, but MSRV 1.89 > our 1.85), serde_norway
-# (last release 2024-12) and serde_yaml_ng (last release 2024-05, repository not archived, last push
-# 2025-09, no RustSec advisory, MSRV 1.64, MIT). serde_yaml_ng is the only one that fits the
-# MSRV; revisit when the MSRV is raised to 1.89 or later.
-serde_yaml_ng = "0.10"
+# on 2026-11-23: serde-saphyr (actively maintained, but MSRV 1.89 > our 1.85), serde_yaml_ng
+# (depends on unsafe-libyaml, RUSTSEC-2024-0449 unmaintained; last release 2024-05) and
+# serde_norway (last release 2024-12, MSRV 1.71, MIT OR Apache-2.0, built on the maintained
+# unsafe-libyaml-norway fork, no advisory). serde_norway is the only one that fits the MSRV and
+# `just audit`; revisit when the MSRV is raised to 1.89 or later (serde-saphyr).
+serde_norway = "0.9"
 which = "8"
 wait-timeout = "0.2"
 anstream = "0.6"

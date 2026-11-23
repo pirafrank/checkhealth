@@ -1,3 +1,0 @@
-[template]
-# Local build artifacts that must not end up in generated projects.
-ignore = ["target", "lcov.info"]
