@@ -1,0 +1,45 @@
+#!/bin/bash
+
+echo "Running pre-push checks..."
+
+# shellcheck disable=SC2034
+while read local_ref local_sha remote_ref remote_sha; do
+  # Check if this is a delete operation (local_sha is all zeros)
+  if [[ "$local_sha" == "0000000000000000000000000000000000000000" ]]; then
+    echo "Delete operation detected for $remote_ref - skipping tests."
+    exit 0
+  fi
+
+  if [[ "$remote_ref" == refs/tags/* ]]; then
+    echo "Tag push detected: $remote_ref"
+    if ! just pre-push-tag; then
+        echo "❌ Pre-push tag check failed. Please fix the issues before pushing."
+        exit 1
+    fi
+
+    echo "✅ Pre-tag-push checks passed."
+    exit 0
+  else
+    # A newly pushed branch has no upstream configured until after this hook
+    # finishes. In that case, run checks instead of treating git diff's failure
+    # as an empty diff (the hook's pipe would otherwise hide the failure).
+    if git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' >/dev/null 2>&1; then
+        if ! git diff "@{upstream}..HEAD" --name-only | grep -Eq '\.(rs|toml|lock)$'; then
+            echo "✅ No Rust files, Cargo.toml, or Cargo.lock have changed, skipping pre-push checks."
+            exit 0
+        fi
+    fi
+    # Run just pre-push task
+    if ! just pre-push; then
+        echo "❌ Pre-push check failed. Please fix the issues before pushing."
+        exit 1
+    fi
+
+    echo "✅ Pre-push checks passed."
+    exit 0
+  fi
+done
+
+# If no refs were read, exit with success
+echo "No refs to push. Exiting."
+exit 0

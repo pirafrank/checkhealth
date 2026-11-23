@@ -1,0 +1,99 @@
+//! Build script for checkhealth.
+//!
+//! Sets compile-time environment variables: git commit hash, build date,
+//! C library name/version, and linking mode (static vs dynamic).
+
+use jiff::Timestamp;
+use std::{env, process::Command};
+
+#[macro_use]
+extern crate build_cfg;
+
+/// Returns the glibc version of the build host, when the target is glibc-based.
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+fn get_glibc_version() -> Option<String> {
+    let ver = glibc_version::get_version().ok()?;
+    Some(format!("{}.{}", ver.major, ver.minor))
+}
+
+/// The `glibc_version` crate is only available on glibc hosts.
+#[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+fn get_glibc_version() -> Option<String> {
+    None
+}
+
+fn c_library_detection() {
+    let target = env::var("TARGET").unwrap();
+    let is_musl = target.contains("musl");
+    let is_gnu = target.contains("gnu");
+    let is_darwin = target.contains("darwin");
+    let is_freebsd = target.contains("freebsd");
+    let is_windows = target.contains("windows");
+
+    // set the c_lib environment variable
+    // note: by default, Rust GNU builds target and link against glibc.
+    if is_gnu && !is_windows {
+        match get_glibc_version() {
+            Some(version) => println!("cargo:rustc-env=C_LIB=glibc v{}", version),
+            None => println!("cargo:rustc-env=C_LIB=glibc"),
+        }
+    } else if is_musl {
+        println!("cargo:rustc-env=C_LIB=musl");
+    } else if is_darwin {
+        println!("cargo:rustc-env=C_LIB=libSystem");
+    } else if is_freebsd {
+        println!("cargo:rustc-env=C_LIB=libc");
+    } else if is_windows && !is_gnu {
+        println!("cargo:rustc-env=C_LIB=msvc");
+    } else if is_windows && is_gnu {
+        println!("cargo:rustc-env=C_LIB=mingw");
+    } else {
+        println!("cargo:rustc-env=C_LIB=unknown");
+    }
+
+    // detect if '-static' is passed for glibc targets
+    let rustflags_static = env::var("RUSTFLAGS")
+        .map(|f| f.contains("-static"))
+        .unwrap_or(false);
+
+    if is_musl || rustflags_static {
+        println!("cargo:rustc-cfg=static_linking");
+    } else {
+        // gnu is dynamically linked by default.
+        // libSystem on macOS can only be linked statically as Apple
+        // does not provide a static version of system libraries.
+        // On x86_64-unknown-freebsd, dynamic linking is the default,
+        // but you can use '-static' to link statically.
+        println!("cargo:rustc-cfg=dynamic_linking");
+    }
+
+    // avoid warnings about custom cfg macros
+    println!("cargo::rustc-check-cfg=cfg(static_linking)");
+    println!("cargo::rustc-check-cfg=cfg(dynamic_linking)");
+}
+
+#[build_cfg_main]
+fn main() {
+    // Get the short commit hash
+    let output = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .expect("Failed to execute git command");
+
+    let git_hash = String::from_utf8(output.stdout).expect("Invalid UTF-8 sequence");
+
+    // BUILD_DATE: use the env var when set (e.g. injected by the Nix flake for
+    // reproducibility).  Falls back to the current UTC time for normal cargo builds.
+    let build_date = std::env::var("BUILD_DATE").unwrap_or_else(|_| {
+        Timestamp::now()
+            .strftime("%Y-%m-%d %H:%M:%S UTC")
+            .to_string()
+    });
+
+    // Set the environment variables
+    println!("cargo:rustc-env=GIT_COMMIT_HASH={}", git_hash.trim());
+    println!("cargo:rustc-env=BUILD_DATE={}", build_date);
+
+    // set the linking detection cfg macro
+    c_library_detection();
+}

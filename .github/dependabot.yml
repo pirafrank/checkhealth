@@ -1,0 +1,26 @@
+# docs: https://json.schemastore.org/dependabot-2.0.json
+version: 2
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      rust-updates:
+        patterns:
+          - "*"  # Groups all Rust crates
+      security-updates:
+        update-types: ["patch", "minor"]
+
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions-updates:
+        patterns:
+          - "*"  # Groups all GitHub Actions
+    ignore:
+      # v2 denies warnings via CARGO_BUILD_WARNINGS; skip until the project is ready for it.
+      - dependency-name: "actions-rust-lang/setup-rust-toolchain"

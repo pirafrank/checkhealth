@@ -1,0 +1,13 @@
+commands:
+  - rust   # make the first fail
+  - cargo
+  - vim
+  - git
+  - fzf
+aliases:
+  - l
+  - ll
+functions:
+  - paste-image
+  - yy
+  - zj
