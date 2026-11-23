@@ -215,3 +215,23 @@ codecov:
 msrv:
   version=$(grep 'rust-version =' Cargo.toml | cut -d '=' -f2 | cut -d '"' -f2); \
   cargo +"$version" check --all-targets --locked
+
+# Build the optimized binary used for benchmarks
+bench-build:
+  cargo build --release --locked
+
+# Run end-to-end timing benchmarks with hyperfine and print a summary
+bench-e2e: bench-build
+  bench/run.sh
+
+# Same, but fail if a target is exceeded (used by CI and pre-release)
+bench-check: bench-build
+  bench/run.sh --check
+
+# Save the current results as the new baseline (commit bench/baseline.json deliberately)
+bench-baseline: bench-build
+  bench/run.sh --export bench/baseline.json
+
+# Smoke run of the end-to-end benchmark scripts (one run, no checks)
+bench-smoke: bench-build
+  bench/run.sh --runs 1

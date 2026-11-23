@@ -1,0 +1,12 @@
+aliases:
+  - bench-alias-1
+  - bench-alias-2
+  - bench-alias-3
+  - bench-alias-4
+  - bench-alias-5
+functions:
+  - bench-func-1
+  - bench-func-2
+  - bench-func-3
+  - bench-func-4
+  - bench-func-5

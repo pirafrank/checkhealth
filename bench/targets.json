@@ -1,0 +1,16 @@
+{
+  "absolute_ms": {
+    "startup": 5,
+    "commands-50": 8,
+    "commands-50-versions": 45,
+    "slow-probe": 600
+  },
+  "relative": {
+    "aliases-10": {"floor": "rc-floor", "plus_ms": 20, "why": "rc start-up time + 20 ms"},
+    "mixed-50": {"max_of": ["commands-50-versions", "aliases-10"], "plus_ms": 20, "why": "max(commands path, shell path) + 20 ms"},
+    "commands-50-dupes": {"same_as": "commands-50", "tolerance_pct": 10, "min_slack_ms": 1, "why": "deduplication: same cost as commands-50"},
+    "overlap-mixed": {"below_sum_of": ["overlap-commands", "overlap-aliases"], "factor": 0.8, "why": "shell and probes overlap: clearly below the sum"}
+  },
+  "binary_size_bytes": 2097152,
+  "max_path_scan_syscalls": 120
+}

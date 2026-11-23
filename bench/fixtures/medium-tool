@@ -1,0 +1,4 @@
+#!/bin/sh
+# Answers --version after 0.3 s.
+sleep 0.3
+echo "medium-tool 1.0.0"

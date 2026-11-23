@@ -95,16 +95,17 @@ fn invalid_name_is_exit_3() {
 }
 
 /// Directory holding symlinks to a few real tools, so `PATH` is small and predictable.
+#[cfg(unix)]
 fn tool_dir(tools: &[&str]) -> TempDir {
     let dir = TempDir::new().unwrap();
     for tool in tools {
         let source = which::which(tool).expect("tool available on this machine");
-        #[cfg(unix)]
         std::os::unix::fs::symlink(source, dir.path().join(tool)).unwrap();
     }
     dir
 }
 
+#[cfg(unix)]
 #[test]
 fn found_commands_exit_0_and_show_the_path() {
     let tools = tool_dir(&["sh", "ls"]);
@@ -120,6 +121,7 @@ fn found_commands_exit_0_and_show_the_path() {
         .stdout(predicate::str::contains("2/2 found"));
 }
 
+#[cfg(unix)]
 #[test]
 fn missing_command_exits_1() {
     let tools = tool_dir(&["sh"]);
@@ -135,6 +137,7 @@ fn missing_command_exits_1() {
         .stderr("");
 }
 
+#[cfg(unix)]
 #[test]
 fn output_follows_config_order_and_deduplicates() {
     let tools = tool_dir(&["sh", "ls", "cat"]);
@@ -179,6 +182,7 @@ fn nonexistent_shell_path_is_exit_4() {
         .code(4);
 }
 
+#[cfg(unix)]
 #[test]
 fn colour_is_off_when_piped_and_with_no_color() {
     let tools = tool_dir(&["sh"]);
@@ -200,6 +204,7 @@ fn colour_is_off_when_piped_and_with_no_color() {
         .stdout(predicate::str::contains("\x1b[").not());
 }
 
+#[cfg(unix)]
 #[test]
 fn colour_can_be_forced() {
     let tools = tool_dir(&["sh"]);
@@ -220,6 +225,7 @@ fn colour_can_be_forced() {
         .stdout(predicate::str::contains("\x1b[32m[✓]"));
 }
 
+#[cfg(unix)]
 #[test]
 fn no_color_env_beats_forcing_by_environment() {
     let tools = tool_dir(&["sh"]);

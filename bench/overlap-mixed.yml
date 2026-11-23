@@ -1,0 +1,13 @@
+commands:
+  - medium-tool-1
+  - medium-tool-2
+  - medium-tool-3
+  - medium-tool-4
+aliases:
+  - bench-alias-1
+  - bench-alias-2
+  - bench-alias-3
+functions:
+  - bench-func-1
+  - bench-func-2
+  - bench-func-3

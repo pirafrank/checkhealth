@@ -1,0 +1,3 @@
+#!/bin/sh
+# Never answers in time: proves that the probe timeout and kill work.
+sleep 10

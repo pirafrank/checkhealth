@@ -64,3 +64,11 @@ jobs:
 
       - name: Generate man pages
         run: just man
+
+      - name: Install hyperfine
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y hyperfine
+
+      - name: Smoke-test the benchmark scripts
+        if: runner.os == 'Linux'
+        run: just bench-smoke
