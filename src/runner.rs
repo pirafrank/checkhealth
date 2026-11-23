@@ -11,6 +11,8 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 
+use anyhow::Result;
+
 use crate::check::{CheckKind, CheckResult, Entry, SearchEnv, Status, check_command};
 
 /// Most probe threads ever started.
@@ -20,17 +22,9 @@ const MAX_THREADS: usize = 8;
 pub trait ShellChecker: Sync {
     /// Checks all `entries` (aliases and functions) and returns one status per entry, in the
     /// same order. Failures that affect the whole batch (timeout, unsupported shell) are
-    /// reported as `Skipped` for every entry.
-    fn check(&self, entries: &[Entry]) -> Vec<Status>;
-}
-
-/// Placeholder until the real shell checker exists: skips every alias and function.
-pub struct UnavailableShell;
-
-impl ShellChecker for UnavailableShell {
-    fn check(&self, entries: &[Entry]) -> Vec<Status> {
-        vec![Status::Skipped("not implemented yet".to_string()); entries.len()]
-    }
+    /// reported as `Skipped` for every entry. An error means the shell could not be used at
+    /// all and ends the run.
+    fn check(&self, entries: &[Entry]) -> Result<Vec<Status>>;
 }
 
 /// Reads the version of the tool at a path. `None` when it cannot be determined.
@@ -57,14 +51,14 @@ pub struct Runner<'a> {
 
 impl Runner<'_> {
     /// Checks every entry and returns the results in the order of `entries`.
-    pub fn run(&self, entries: &[Entry]) -> Vec<CheckResult> {
+    pub fn run(&self, entries: &[Entry]) -> Result<Vec<CheckResult>> {
         let shell_entries: Vec<Entry> = entries
             .iter()
             .filter(|e| e.kind != CheckKind::Command)
             .cloned()
             .collect();
         let mut statuses: Vec<Option<Status>> = vec![None; entries.len()];
-        let mut shell_statuses = Vec::new();
+        let mut shell_result: Result<Vec<Status>> = Ok(Vec::new());
 
         thread::scope(|scope| {
             // Start the slowest part first so it overlaps with everything else.
@@ -98,12 +92,12 @@ impl Runner<'_> {
             }
 
             if let Some(job) = shell_job {
-                shell_statuses = job.join().expect("shell thread panicked");
+                shell_result = job.join().expect("shell thread panicked");
             }
         });
 
-        let mut shell_statuses = shell_statuses.into_iter();
-        entries
+        let mut shell_statuses = shell_result?.into_iter();
+        let results = entries
             .iter()
             .zip(statuses)
             .map(|(entry, status)| {
@@ -117,7 +111,8 @@ impl Runner<'_> {
                     status,
                 }
             })
-            .collect()
+            .collect();
+        Ok(results)
     }
 
     /// Probes `jobs` (entry index and path) on a bounded pool; returns `(index, version)`.
@@ -163,9 +158,9 @@ mod tests {
     struct SlowShell(Duration);
 
     impl ShellChecker for SlowShell {
-        fn check(&self, entries: &[Entry]) -> Vec<Status> {
+        fn check(&self, entries: &[Entry]) -> Result<Vec<Status>> {
             thread::sleep(self.0);
-            entries
+            Ok(entries
                 .iter()
                 .map(|e| {
                     if e.name.starts_with("ok") {
@@ -177,7 +172,7 @@ mod tests {
                         Status::Missing
                     }
                 })
-                .collect()
+                .collect())
         }
     }
 
@@ -234,12 +229,13 @@ mod tests {
             shell: &shell,
             threads: 4,
         };
-        let concurrent = runner.run(&entries);
+        let concurrent = runner.run(&entries).unwrap();
         let sequential = Runner {
             threads: 1,
             ..runner
         }
-        .run(&entries);
+        .run(&entries)
+        .unwrap();
         assert_eq!(concurrent, sequential);
         assert_eq!(names(&concurrent), names(&sequential));
         assert_eq!(
@@ -279,7 +275,7 @@ mod tests {
             threads: 6,
         };
         let started = Instant::now();
-        let results = runner.run(&entries);
+        let results = runner.run(&entries).unwrap();
         // Sequentially this would take 1.8 s.
         assert!(
             started.elapsed() < Duration::from_millis(900),
@@ -311,7 +307,8 @@ mod tests {
             shell: &shell,
             threads: 2,
         }
-        .run(&entries);
+        .run(&entries)
+        .unwrap();
         assert!(peak.load(Ordering::SeqCst) <= 2);
     }
 
@@ -335,7 +332,7 @@ mod tests {
             threads: 2,
         };
         let started = Instant::now();
-        runner.run(&entries);
+        runner.run(&entries).unwrap();
         // 300 ms shell + 300 ms probes would be 600 ms if run one after the other.
         assert!(
             started.elapsed() < Duration::from_millis(500),
@@ -354,7 +351,7 @@ mod tests {
             shell: &shell,
             threads: 2,
         };
-        let results = runner.run(&[entry(CheckKind::Command, "a")]);
+        let results = runner.run(&[entry(CheckKind::Command, "a")]).unwrap();
         assert!(matches!(
             results[0].status,
             Status::Found { version: None, .. }
@@ -365,7 +362,7 @@ mod tests {
     fn shell_is_not_used_without_aliases_or_functions() {
         struct NeverShell;
         impl ShellChecker for NeverShell {
-            fn check(&self, _: &[Entry]) -> Vec<Status> {
+            fn check(&self, _: &[Entry]) -> Result<Vec<Status>> {
                 panic!("the shell must not be started");
             }
         }
@@ -376,15 +373,15 @@ mod tests {
             shell: &NeverShell,
             threads: 2,
         };
-        runner.run(&[entry(CheckKind::Command, "a")]);
+        runner.run(&[entry(CheckKind::Command, "a")]).unwrap();
     }
 
     #[test]
     fn a_short_shell_answer_degrades_to_skipped() {
         struct Lazy;
         impl ShellChecker for Lazy {
-            fn check(&self, _: &[Entry]) -> Vec<Status> {
-                Vec::new()
+            fn check(&self, _: &[Entry]) -> Result<Vec<Status>> {
+                Ok(Vec::new())
             }
         }
         let (_dir, search) = search_env(&[]);
@@ -394,7 +391,7 @@ mod tests {
             shell: &Lazy,
             threads: 1,
         };
-        let results = runner.run(&[entry(CheckKind::Alias, "x")]);
+        let results = runner.run(&[entry(CheckKind::Alias, "x")]).unwrap();
         assert!(matches!(results[0].status, Status::Skipped(_)));
     }
 }

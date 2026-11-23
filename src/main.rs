@@ -28,7 +28,7 @@ use crate::cli::{Cli, ColorWhen, Commands};
 use crate::config::Config;
 use crate::error::{ExitCode, exit_code_of};
 use crate::runner::Runner;
-use crate::shell::ShellSpec;
+use crate::shell::{ShellRunner, ShellSpec};
 
 /// Set when debug logging is on, so the panic hook can add the location.
 static DEBUG_OUTPUT: AtomicBool = AtomicBool::new(false);
@@ -94,6 +94,9 @@ fn run(cli: Cli) -> Result<ExitCode> {
     }
     debug!("Shell: {shell:?}");
 
+    let shell_timeout = args
+        .timeout
+        .map_or(shell::DEFAULT_TIMEOUT, Duration::from_secs_f64);
     let probe_timeout = args
         .timeout
         .map_or(version::DEFAULT_TIMEOUT, Duration::from_secs_f64);
@@ -102,10 +105,13 @@ fn run(cli: Cli) -> Result<ExitCode> {
     let runner = Runner {
         search: &search_env,
         probe: (!args.no_version).then_some(&probe as runner::Probe<'_>),
-        shell: &runner::UnavailableShell,
+        shell: &ShellRunner {
+            spec: shell,
+            timeout: shell_timeout,
+        },
         threads: runner::default_threads(),
     };
-    let results = runner.run(&plan(&config));
+    let results = runner.run(&plan(&config))?;
 
     report::print(&results, args.color).context("failed to write the report")?;
 
