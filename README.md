@@ -30,13 +30,58 @@ fixes anything.
 
 ## Install
 
+### Install script (Linux, macOS, FreeBSD)
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/pirafrank/checkhealth/main/install.sh | sh
+```
+
+It installs the latest release to `~/.local/bin` after verifying its checksum. Running it again
+updates the binary. Set `CHECKHEALTH_TAG` to pick a release and `CHECKHEALTH_INSTALL_DIR` to
+change the destination.
+
+### Install script (Windows)
+
+In PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/pirafrank/checkhealth/main/install.ps1 | iex
+```
+
+This runs the script in memory, so the execution policy does not apply. The script is not
+signed. If you save `install.ps1` first and your policy blocks it, either unblock the file
+(`Unblock-File .\install.ps1`) or allow unsigned scripts for the current session only:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
+It installs the latest release to `%LOCALAPPDATA%\Programs\checkhealth`, verifies its checksum
+and adds the folder to your user `PATH`. It accepts the same `CHECKHEALTH_TAG` and
+`CHECKHEALTH_INSTALL_DIR` variables.
+
+### With poof (Linux, macOS)
+
+Use [poof](https://poof.fpira.com) to install and keep it updated easily:
+
+```sh
+poof install pirafrank/checkhealth
+```
+
+### From the releases page
+
 Download the latest binary for your platform from the
 [releases](https://github.com/pirafrank/checkhealth/releases) page and put it in a folder in
-your `$PATH`. Each release ships a signed checksums manifest, an SBOM and a build provenance
-attestation.
+your `$PATH`.
 
-Supported platforms: Linux (glibc and musl; x86_64, aarch64), macOS (x86_64, aarch64), FreeBSD
-(x86_64) and Windows (MSVC x86_64/aarch64, GNU x86_64).
+Each release ships a signed checksums manifest, an SBOM and a build provenance attestation.
+
+## Supported platforms
+
+- Linux (glibc and musl; x86_64, aarch64)
+- macOS (x86_64, aarch64)
+- FreeBSD (x86_64)
+- Windows (MSVC x86_64/aarch64, GNU x86_64).
 
 To build from source (Rust 1.85 or later): `cargo install --path .`
 
@@ -79,6 +124,47 @@ contain only letters, digits and `_ - . + @ : ,`: no whitespace or shell metacha
 listed twice within a kind is checked once. [`config.sample.yml`](config.sample.yml) is a working
 example.
 
+## How it works
+
+checkhealth checks the three kinds of entries in different ways:
+
+1. **Commands** are looked up on `PATH` inside checkhealth itself, with no shell involved. For
+   each one found, it also runs `<tool> --version` to show the version (see *Versions*).
+2. **Aliases and functions** only exist inside a shell, so checkhealth asks one. It starts the
+   shell **once** for all names, as `<shell> -i -c '<fixed script>' ...`. The script tests each
+   name and prints one marker line per name, and checkhealth reads only those lines, so anything
+   your rc files print is ignored. Names are passed as arguments and are never interpolated into
+   the script.
+3. The shell runs concurrently with the command lookups and version probes. Results are
+   collected and printed in config order, whatever order they finished in.
+
+### Interactive shells that never draw a prompt
+
+The `-i` flag makes the shell read your rc file (`~/.zshrc`, `~/.bashrc`), which is where aliases
+and functions usually live. But `-i -c '<script>'` runs the script and exits **without ever
+displaying a prompt**. It is an interactive shell in the sense that it loads your interactive
+configuration, but it is not the same as the terminal you type into.
+
+This matters if your rc files defer work until the first prompt, which is a common startup
+optimisation. Examples are zsh `precmd` hooks and `PROMPT_COMMAND` in bash. Tools that are
+lazy-loaded this way, such as `nvm`, `rvm` or `pyenv` set up by a one-shot prompt hook, are not
+loaded when checkhealth asks about them. They can be reported as **missing** even though they
+work fine in your terminal.
+
+**This is not a bug in checkhealth.** The same thing happens to any `zsh -ic '...'` or
+`bash -ic '...'` command, and the fix belongs in your shell configuration. For example, define a
+small stub function that loads the real tool on first call, or load it from a file read by every
+interactive shell instead of from a prompt hook. To see what checkhealth sees, run the shell the
+same way:
+
+```sh
+zsh -ic 'whence -w nvm'    # zsh
+bash -ic 'declare -F nvm'  # bash
+```
+
+If that prints nothing, checkhealth will report the entry as missing. Run with `-vv` to see the
+stderr of the shell, which helps with debugging.
+
 ## Exit codes
 
 | Code | Name | Meaning |
@@ -95,7 +181,7 @@ summary line is printed. Per-entry problems (a probe timeout, a shell timeout, a
 alias check) are shown as `skipped` in the report and never change the exit code. The numbers
 are stable across releases.
 
-## Shells
+## Supported shells
 
 | Platform | Supported shells |
 |---|---|
@@ -145,10 +231,15 @@ just bench-baseline # save bench/baseline.json
 
 ## Development
 
-`just` is the task runner (`just --list`). `just ci` runs the same checks as the CI workflow,
-`just test` the tests (with the `test-hooks` feature, which enables hidden failure triggers
-used only by tests), `just man` generates the man page. See [AGENTS.md](AGENTS.md) and
-[CONTRIBUTING.md](CONTRIBUTING.md).
+Many development tasks are automated using `just`, the task runner.
+
+- `just` is the task runner (`just --list`)
+- `just ci` runs the same checks as the CI workflow
+- `just test` the tests (with the `test-hooks` feature, which enables hidden failure triggers
+  used only by tests)
+- `just man` generates the man page.
+
+See [AGENTS.md](AGENTS.md) and [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines and contribution instructions.
 
 ## License
 
