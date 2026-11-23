@@ -8,11 +8,14 @@ mod completions;
 mod config;
 mod constants;
 mod error;
+mod process;
 mod report;
 mod shell;
+mod version;
 
 use std::panic::PanicHookInfo;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -88,12 +91,29 @@ fn run(cli: Cli) -> Result<ExitCode> {
     }
     debug!("Shell: {shell:?}");
 
+    let probe_timeout = (!args.no_version).then(|| {
+        args.timeout
+            .map_or(version::DEFAULT_TIMEOUT, Duration::from_secs_f64)
+    });
     let search_env = SearchEnv::from_process();
     let results: Vec<CheckResult> = plan(&config)
         .into_iter()
         .map(|entry| {
             let status = match entry.kind {
-                check::CheckKind::Command => check_command(&search_env, &entry.name),
+                check::CheckKind::Command => {
+                    let mut status = check_command(&search_env, &entry.name);
+                    if let (
+                        Status::Found {
+                            path: Some(path),
+                            version,
+                        },
+                        Some(timeout),
+                    ) = (&mut status, probe_timeout)
+                    {
+                        *version = version::probe(path, timeout);
+                    }
+                    status
+                }
                 _ => Status::Skipped("not implemented yet".to_string()),
             };
             CheckResult { entry, status }

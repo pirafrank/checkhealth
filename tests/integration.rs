@@ -233,3 +233,68 @@ fn no_color_env_beats_forcing_by_environment() {
         .assert()
         .stdout(predicate::str::contains("\x1b[").not());
 }
+
+#[cfg(unix)]
+mod probes {
+    use std::os::unix::fs::PermissionsExt;
+    use std::time::{Duration, Instant};
+
+    use super::*;
+
+    /// A temp dir used as the whole `PATH`, with executable shell scripts in it.
+    fn fake_path(tools: &[(&str, &str)]) -> TempDir {
+        let dir = TempDir::new().unwrap();
+        for (name, body) in tools {
+            let path = dir.path().join(name);
+            std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        dir
+    }
+
+    #[test]
+    fn version_is_shown_next_to_the_path() {
+        let path_dir = fake_path(&[("good", "echo 'good 1.0'")]);
+        let (_dir, config) = config("commands: [good]\n");
+        checkhealth()
+            .arg("-c")
+            .arg(&config)
+            .env("PATH", path_dir.path())
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("good  (good 1.0)"));
+    }
+
+    #[test]
+    fn no_version_does_not_run_the_tool() {
+        let marker = TempDir::new().unwrap().keep().join("ran");
+        let path_dir = fake_path(&[("good", &format!("touch {}; echo 1.0", marker.display()))]);
+        let (_dir, config) = config("commands: [good]\n");
+        checkhealth()
+            .arg("-c")
+            .arg(&config)
+            .arg("--no-version")
+            .env("PATH", path_dir.path())
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("(").not());
+        assert!(!marker.exists(), "tool was executed despite --no-version");
+    }
+
+    #[test]
+    fn broken_probe_never_changes_the_result() {
+        let path_dir = fake_path(&[("fails", "exit 3"), ("slow", "sleep 10"), ("flood", "yes")]);
+        let (_dir, config) = config("commands: [fails, slow, flood]\n");
+        let started = Instant::now();
+        checkhealth()
+            .arg("-c")
+            .arg(&config)
+            .args(["--timeout", "0.3"])
+            .env("PATH", path_dir.path())
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("3/3 found"));
+        // Sequential probing until Phase 4: a few probes at most `timeout` each.
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+}

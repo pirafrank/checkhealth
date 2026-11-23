@@ -182,6 +182,7 @@ dependencies = [
  "env_logger",
  "glibc_version",
  "jiff 0.2.46",
+ "libc",
  "log",
  "predicates",
  "serde",

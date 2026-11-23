@@ -64,6 +64,10 @@ assert_cmd = "2.0.17"
 #mockito = "1.7"
 clap_mangen = "0.3"
 
+# Killing a timed-out probe together with its process group needs `kill(2)`.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [build-dependencies]
 build_cfg = "1.1.0"
 jiff = { version = "0.2", default-features = false, features = ["std"] }
