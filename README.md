@@ -10,8 +10,11 @@ resolved location and version where available. It is read-only: it never install
 fixes anything.
 
 ```text
+-------- Commands (1/2 found) --------
 [✓] cargo  /home/me/.cargo/bin/cargo  (cargo 1.85.0)
 [✗] rust
+
+-------- Functions (0/0 found) --------
 [-] paste-image  (skipped: not supported on cmd.exe)
 
 1/2 found

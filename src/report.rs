@@ -5,7 +5,7 @@ use std::io::{self, Write};
 use anstream::{AutoStream, ColorChoice};
 use anstyle::{AnsiColor, Style};
 
-use crate::check::{CheckResult, Status};
+use crate::check::{CheckKind, CheckResult, Status};
 use crate::cli::ColorWhen;
 
 /// Style of the `[✓]` marker.
@@ -14,6 +14,9 @@ const GREEN: Style = AnsiColor::Green.on_default();
 const RED: Style = AnsiColor::Red.on_default();
 /// Style of the `[-]` marker.
 const YELLOW: Style = AnsiColor::Yellow.on_default();
+
+/// Dashes placed before and after each group heading.
+const RULE: &str = "--------";
 
 /// Counts shown in the summary line.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -28,7 +31,7 @@ pub struct Summary {
 
 impl Summary {
     /// Tallies `results`.
-    pub fn of(results: &[CheckResult]) -> Self {
+    pub fn of<'a>(results: impl IntoIterator<Item = &'a CheckResult>) -> Self {
         let mut summary = Self::default();
         for result in results {
             match &result.status {
@@ -51,13 +54,35 @@ pub fn color_choice(when: ColorWhen) -> ColorChoice {
     }
 }
 
-/// Writes one line per result, then a blank line and the summary.
+/// Writes the results grouped by kind (commands, aliases, functions), each group under a heading
+/// with its own count, then a blank line and the overall summary. Groups without entries are
+/// omitted.
 ///
 /// Styling is always emitted; wrap the writer in an [`AutoStream`] to strip it when colour is
 /// off.
 pub fn render(results: &[CheckResult], out: &mut dyn Write) -> io::Result<()> {
-    for result in results {
-        render_line(result, out)?;
+    let mut first_group = true;
+    for kind in CheckKind::ALL {
+        let group: Vec<&CheckResult> = results.iter().filter(|r| r.entry.kind == kind).collect();
+        if group.is_empty() {
+            continue;
+        }
+        if !first_group {
+            writeln!(out)?;
+        }
+        first_group = false;
+
+        let counts = Summary::of(group.iter().copied());
+        writeln!(
+            out,
+            "{RULE} {} ({}/{} found) {RULE}",
+            kind.heading(),
+            counts.found,
+            counts.found + counts.missing
+        )?;
+        for result in group {
+            render_line(result, out)?;
+        }
     }
     let summary = Summary::of(results);
     writeln!(out)?;
@@ -124,9 +149,13 @@ mod tests {
     use crate::check::{CheckKind, Entry};
 
     fn result(name: &str, status: Status) -> CheckResult {
+        result_of(CheckKind::Command, name, status)
+    }
+
+    fn result_of(kind: CheckKind, name: &str, status: Status) -> CheckResult {
         CheckResult {
             entry: Entry {
-                kind: CheckKind::Command,
+                kind,
                 name: name.into(),
             },
             status,
@@ -143,7 +172,8 @@ mod tests {
                 },
             ),
             result("rust", Status::Missing),
-            result(
+            result_of(
+                CheckKind::Function,
                 "paste-image",
                 Status::Skipped("not supported on cmd.exe".into()),
             ),
@@ -160,12 +190,35 @@ mod tests {
     fn plain_output_matches_the_spec() {
         assert_eq!(
             plain(&sample()),
-            "[✓] cargo  /bin/cargo  (cargo 1.85.0)\n\
+            "-------- Commands (1/2 found) --------\n\
+             [✓] cargo  /bin/cargo  (cargo 1.85.0)\n\
              [✗] rust\n\
+             \n\
+             -------- Functions (0/0 found) --------\n\
              [-] paste-image  (skipped: not supported on cmd.exe)\n\
              \n\
              1/2 found\n\
              1 skipped: paste-image\n"
+        );
+    }
+
+    #[test]
+    fn groups_follow_command_alias_function_order_and_skip_empty_ones() {
+        let results = vec![
+            result_of(CheckKind::Function, "yy", Status::Missing),
+            result_of(CheckKind::Alias, "ll", Status::Missing),
+            result_of(CheckKind::Alias, "l", Status::Missing),
+        ];
+        assert_eq!(
+            plain(&results),
+            "-------- Aliases (0/2 found) --------\n\
+             [✗] ll\n\
+             [✗] l\n\
+             \n\
+             -------- Functions (0/1 found) --------\n\
+             [✗] yy\n\
+             \n\
+             0/3 found\n"
         );
     }
 

@@ -16,6 +16,20 @@ pub enum CheckKind {
     Function,
 }
 
+impl CheckKind {
+    /// All kinds, in the order they are reported.
+    pub const ALL: [CheckKind; 3] = [CheckKind::Command, CheckKind::Alias, CheckKind::Function];
+
+    /// Title of the report group holding entries of this kind.
+    pub fn heading(self) -> &'static str {
+        match self {
+            CheckKind::Command => "Commands",
+            CheckKind::Alias => "Aliases",
+            CheckKind::Function => "Functions",
+        }
+    }
+}
+
 /// One name to check.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entry {

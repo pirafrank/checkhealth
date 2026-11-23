@@ -152,6 +152,7 @@ fn output_follows_config_order_and_deduplicates() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     let names: Vec<_> = stdout
         .lines()
+        .skip(1) // the "Commands (n/m found):" heading
         .take_while(|l| !l.is_empty())
         .map(|l| l.split_whitespace().nth(1).unwrap().to_string())
         .collect();
@@ -283,7 +284,7 @@ mod probes {
             .env("PATH", path_dir.path())
             .assert()
             .success()
-            .stdout(predicate::str::contains("(").not());
+            .stdout(predicate::str::contains("good 1.0").not());
         assert!(!marker.exists(), "tool was executed despite --no-version");
     }
 
