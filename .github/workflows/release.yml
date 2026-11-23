@@ -310,6 +310,7 @@ jobs:
     permissions:
       contents: read
     name: Publish crate
+    environment: publish-crates
     runs-on: ubuntu-latest
     needs: make_release
     steps:
@@ -324,4 +325,4 @@ jobs:
         uses: katyo/publish-crates@v2
         with:
           registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          dry-run: true
+          dry-run: false
