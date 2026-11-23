@@ -136,7 +136,17 @@ pub fn run(command: &mut Command, limits: Limits) -> io::Result<Captured> {
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
-        command.process_group(0);
+        // SAFETY: `setsid` is async-signal-safe, which is all `pre_exec` allows between fork and
+        // exec. A new session makes the child lead its own process group (so the whole tree can
+        // be killed) and detaches it from the controlling terminal. Without that, an
+        // interactive shell started from a terminal, in a background process group, is stopped
+        // by SIGTTOU/SIGTTIN when it touches the tty and always runs into the timeout.
+        unsafe {
+            command.pre_exec(|| {
+                libc::setsid();
+                Ok(())
+            });
+        }
     }
 
     let mut child = command.spawn()?;
@@ -251,6 +261,16 @@ mod tests {
             std::thread::sleep(Duration::from_millis(20));
         }
         assert!(!alive, "background process {pid} survived");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn child_leads_its_own_session_without_a_terminal() {
+        // A session leader has sid == pid, and cannot be stopped by terminal job control.
+        let out = run(&mut sh("echo $$; ps -o sid= -p $$"), limits(2000)).unwrap();
+        let text = String::from_utf8(out.stdout).unwrap();
+        let mut numbers = text.split_whitespace();
+        assert_eq!(numbers.next(), numbers.next(), "{text:?}");
     }
 
     #[test]
