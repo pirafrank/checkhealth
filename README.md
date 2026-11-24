@@ -100,6 +100,25 @@ your `$PATH`.
 
 Each release ships a signed checksums manifest, an SBOM and a build provenance attestation.
 
+## Requirements
+
+For **interactive use** (reading the report in a terminal), checkhealth needs nothing special:
+
+- **No Nerd Font.** The report uses only plain Unicode symbols (`✓`, `✗`) and the 16 basic ANSI
+  colours, no private-use icon glyphs.
+- A **UTF-8 terminal** with a font that has `✓` and `✗` (U+2713, U+2717). Almost every
+  terminal font does, or the terminal falls back to one that does. Modern terminals (Windows
+  Terminal, iTerm2, kitty, WezTerm, GNOME Terminal, Alacritty…) work out of the box. Legacy
+  consoles such as the old `conhost.exe` with a raster font may show `?` boxes.
+- **ANSI colour support**, optional: without it, use `--color never`. The `[✓]`/`[✗]`/`[-]`
+  markers carry the meaning even with no colour.
+- A **pager** that passes colours through, optional. It defaults to `less -FRX`; see *Pager* to
+  change or disable it.
+
+These apply to interactive mode only. Scripts and agents should use `-e tsv`, `-e csv` or `-e json`:
+the output is plain data with no symbols or colour, and it is not paged when captured, so no terminal, font or pager matters (see
+[Exporting for scripts](#exporting-for-scripts)).
+
 ## Supported platforms
 
 - Linux (glibc and musl; x86_64, aarch64)
