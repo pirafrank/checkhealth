@@ -190,11 +190,9 @@ compliance: audit licenses
 coverage:
   cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
 
-# Assumes you have the `browse` command in PATH
-# see https://github.com/pirafrank/dotfiles/blob/main/bin/browse
 # Browse issues on GitHub
 issues:
-  browse "https://github.com/pirafrank/checkhealth/issues"
+  gh issue list --repo pirafrank/checkhealth --web
 
 # Check coverage of the current diff against the Codecov patch threshold
 coverage-diff: coverage
@@ -205,11 +203,9 @@ browse-coverage: coverage
   cargo llvm-cov report --html
   python3 -m http.server --directory ./target/llvm-cov/html 8888
 
-# Assumes you have the `browse` command in PATH
-# see https://github.com/pirafrank/dotfiles/blob/main/bin/browse
 # Browse coverage report on Codecov
 codecov:
-  browse "https://app.codecov.io/github/pirafrank/checkhealth"
+  python3 -m webbrowser "https://app.codecov.io/github/pirafrank/checkhealth"
 
 # Rust MSRV check
 msrv:
