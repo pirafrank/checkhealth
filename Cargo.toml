@@ -52,7 +52,7 @@ serde_norway = "0.9"
 serde_json = "1"
 which = "8"
 wait-timeout = "0.2"
-anstream = "0.6"
+anstream = "1.0"
 anstyle = "1"
 
 [dev-dependencies]
