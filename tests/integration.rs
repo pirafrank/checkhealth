@@ -9,8 +9,7 @@ fn checkhealth() -> Command {
     Command::cargo_bin("checkhealth").expect("binary builds")
 }
 
-/// Returns the binary under test, asking for the human-readable report. Piped stdout otherwise
-/// defaults to TSV.
+/// Returns the binary under test, asking explicitly for the human-readable report.
 #[cfg(unix)]
 fn text_report() -> Command {
     let mut cmd = checkhealth();
@@ -483,9 +482,8 @@ mod export {
     }
 
     #[test]
-    fn piped_output_defaults_to_tsv() {
+    fn default_format_is_text_even_when_piped() {
         let (tools, _dir, path) = found_and_missing();
-        let good = tools.path().join("sh");
         checkhealth()
             .env("PATH", tools.path())
             .arg("-c")
@@ -493,10 +491,56 @@ mod export {
             .arg("--no-version")
             .assert()
             .code(1)
-            .stdout(format!(
-                "command\tsh\tfound\t{}\t\t\ncommand\tabsent-tool\tmissing\t\t\t\n",
-                good.display()
-            ));
+            .stdout(predicate::str::contains("-------- Commands (1/2 found)"))
+            .stdout(predicate::str::contains("[✗] absent-tool"));
+    }
+
+    #[test]
+    fn format_does_not_change_between_pipe_and_file() {
+        let (tools, dir, path) = found_and_missing();
+        for format in ["text", "tsv", "csv", "json"] {
+            let piped = checkhealth()
+                .env("PATH", tools.path())
+                .arg("-c")
+                .arg(&path)
+                .args(["--no-version", "-e", format])
+                .assert()
+                .code(1)
+                .get_output()
+                .stdout
+                .clone();
+            let out_path = dir.path().join(format!("out.{format}"));
+            let status = std::process::Command::new(assert_cmd::cargo::cargo_bin("checkhealth"))
+                .env("PATH", tools.path())
+                .arg("-c")
+                .arg(&path)
+                .args(["--no-version", "-e", format])
+                .stdout(std::fs::File::create(&out_path).unwrap())
+                .status()
+                .unwrap();
+            assert_eq!(status.code(), Some(1));
+            assert_eq!(std::fs::read(&out_path).unwrap(), piped, "format {format}");
+        }
+    }
+
+    #[test]
+    fn no_pager_flag_and_pager_env_do_not_affect_piped_output() {
+        let (tools, _dir, path) = found_and_missing();
+        let run = |extra: &[&str]| {
+            checkhealth()
+                .env("PATH", tools.path())
+                .env("CHECKHEALTH_PAGER", "false")
+                .arg("-c")
+                .arg(&path)
+                .arg("--no-version")
+                .args(extra)
+                .assert()
+                .code(1)
+                .get_output()
+                .stdout
+                .clone()
+        };
+        assert_eq!(run(&[]), run(&["--no-pager"]));
     }
 
     #[test]

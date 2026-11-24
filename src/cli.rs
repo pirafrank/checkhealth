@@ -42,9 +42,9 @@ pub enum ColorWhen {
 /// Output format of the report.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum ExportFormat {
-    /// Human-readable report (the default when stdout is a terminal)
+    /// Human-readable report (the default)
     Text,
-    /// Tab-separated values, one entry per line (the default when stdout is piped)
+    /// Tab-separated values, one entry per line
     Tsv,
     /// Comma-separated values (RFC 4180 quoting), same columns as `tsv`
     Csv,
@@ -116,10 +116,15 @@ pub struct CheckArgs {
     #[arg(long, value_enum, value_name = "WHEN", default_value_t = ColorWhen::Auto)]
     pub color: ColorWhen,
 
-    /// Output format. Defaults to `text` on a terminal and to `tsv` when stdout is piped.
+    /// Output format, whatever stdout is.
     /// TSV and CSV columns: kind, name, status (found|missing|skipped), path, version, reason
-    #[arg(short, long, value_enum, value_name = "FORMAT")]
-    pub export: Option<ExportFormat>,
+    #[arg(short, long, value_enum, value_name = "FORMAT", default_value_t = ExportFormat::Text)]
+    pub export: ExportFormat,
+
+    /// Never page the output. By default it goes through a pager when stdout is a terminal
+    /// (`$CHECKHEALTH_PAGER`, then `$PAGER`, then `less -FRX`). `$NO_PAGER` also disables it
+    #[arg(long)]
+    pub no_pager: bool,
 
     /// Do not run tools to read their version
     #[arg(long)]

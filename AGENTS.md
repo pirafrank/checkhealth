@@ -11,8 +11,12 @@ tooling. Keep this guide synchronized with the code, `justfile`, and CI workflow
 pass/fail line for each, with the resolved path and version of found commands. It is read-only.
 See `README.md` for the user-facing behavior. Decisions to preserve:
 
-- Flat CLI: `checkhealth -c FILE [-s SHELL] [--color] [-e FORMAT] [--no-version] [--timeout]`; `completions`
+- Flat CLI: `checkhealth -c FILE [-s SHELL] [--color] [-e FORMAT] [--no-pager] [--no-version] [--timeout]`; `completions`
   is the only subcommand and does not need `--config`.
+- Output format is chosen only by `-e` (default `text`), never by whether stdout is a pipe. A
+  git-style pager (`src/pager.rs`) runs only when stdout is a terminal: `--no-pager`/`$NO_PAGER`
+  opt out, `$CHECKHEALTH_PAGER`, then `$PAGER`, then `less -FRX`. The report is rendered to
+  memory first; the exit code never comes from the pager.
 - Exit codes are part of the public interface: 0 ok, 1 missing, 2 usage, 3 config, 4 shell,
   5 internal. `src/error.rs` defines them; `main` is the only place that maps errors to codes.
   Panics map to 5 through a panic hook, so `panic = "abort"` must not be used.
@@ -42,6 +46,7 @@ src/
 ├── process.rs               # child processes with timeout, output cap, process-group kill
 ├── version.rs               # best-effort `--version` probing
 ├── runner.rs                # concurrent scheduling (scoped threads, bounded pool), ordered results
+├── pager.rs                 # automatic pager when stdout is a terminal
 └── report.rs                # rendering, colour (anstream/anstyle), summary, error line
 examples/gen_man.rs          # man-page generation (reuses src/cli.rs and src/constants.rs)
 build.rs                     # exposes commit hash, build date, C lib, and linking type to the crate

@@ -1,14 +1,9 @@
 # Exporting for scripts
 
-The report format depends on where stdout goes:
-
-| stdout | Default format |
-|---|---|
-| A terminal | `text`: the coloured report shown in the [README](../README.md) |
-| A pipe or a file | `tsv`: one machine-readable line per entry, no colour |
-
-`-e, --export <text|tsv|csv|json>` overrides this in both directions. `--color always` without
-`-e` also keeps the text report, so `checkhealth -c cfg.yml --color always | less -R` still works.
+The report format is chosen only by `-e, --export <text|tsv|csv|json>`. The default is `text`,
+the coloured report shown in the [README](../README.md), whether stdout is a terminal, a pipe or
+a file. Scripts must ask for a machine-readable format explicitly. Colour is automatic (on for a
+terminal only); the export formats never contain colour.
 
 **TSV** and **CSV** have no header and one line per entry, in report order (commands, aliases,
 functions). The columns are `kind`, `name`, `status`, `path`, `version` and `reason`; cells that
@@ -42,7 +37,7 @@ Allowed values and when each field is set:
 Examples:
 
 ```sh
-checkhealth -c cfg.yml | awk -F'\t' '$3 == "missing" { print $2 }'   # names of missing tools
+checkhealth -c cfg.yml -e tsv | awk -F'\t' '$3 == "missing" { print $2 }'   # names of missing tools
 checkhealth -c cfg.yml -e json | jq -r '.[] | select(.status=="missing") | .name'
 checkhealth -c cfg.yml -e text > report.txt                          # human report in a file
 ```
@@ -54,10 +49,10 @@ checkhealth -c cfg.yml -e text > report.txt                          # human rep
 (it is read-only in zsh).
 
 ```zsh
-missing=(${(f)"$(checkhealth -c cfg.yml | awk -F'\t' '$3 == "missing" { print $2 }')"})
+missing=(${(f)"$(checkhealth -c cfg.yml -e tsv | awk -F'\t' '$3 == "missing" { print $2 }')"})
 (( $#missing )) && print -l -- "missing:" $missing
 
-checkhealth -c cfg.yml | while IFS= read -r line; do
+checkhealth -c cfg.yml -e tsv | while IFS= read -r line; do
   fields=("${(@ps:\t:)line}")      # kind name status path version reason
   print "$fields[2] -> $fields[3]"
 done
@@ -69,14 +64,14 @@ collapses empty cells, so read only the leading columns, which are never empty, 
 in one variable.
 
 ```bash
-mapfile -t missing < <(checkhealth -c cfg.yml | awk -F'\t' '$3 == "missing" { print $2 }')
+mapfile -t missing < <(checkhealth -c cfg.yml -e tsv | awk -F'\t' '$3 == "missing" { print $2 }')
 printf 'missing: %s\n' "${missing[@]}"
 
-checkhealth -c cfg.yml | while IFS=$'\t' read -r kind name state rest; do
+checkhealth -c cfg.yml -e tsv | while IFS=$'\t' read -r kind name state rest; do
   echo "$name -> $state"
 done
 
-checkhealth -c cfg.yml | cut -f2,3                 # name and status, empty cells preserved
+checkhealth -c cfg.yml -e tsv | cut -f2,3                 # name and status, empty cells preserved
 ```
 
 **pwsh (Windows)**: CSV or JSON turn straight into objects, so no text parsing is needed. TSV has

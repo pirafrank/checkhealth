@@ -140,7 +140,8 @@ checkhealth completions --shell bash
 | `-c, --config <FILE>` | Path to the YAML config file (required, except for `completions`) |
 | `-s, --shell <SHELL>` | Shell used for aliases and functions: a name or a path (see *Shells*) |
 | `--color <WHEN>` | `auto` (default: colour when stdout is a terminal), `always` or `never` |
-| `-e, --export <FORMAT>` | `text`, `tsv`, `csv` or `json`. Default: `text` on a terminal, `tsv` when stdout is piped or redirected |
+| `-e, --export <FORMAT>` | `text` (default), `tsv`, `csv` or `json`. Never depends on where stdout goes |
+| `--no-pager` | Do not page the output (see *Pager*). `$NO_PAGER` does the same |
 | `--no-version` | Do not run tools to read their version |
 | `--timeout <SECONDS>` | Per-process timeout for version probes (default 2 s) and the shell (default 5 s) |
 | `-v` … `-vvvv`, `-q` | Verbosity (default level: info) |
@@ -148,7 +149,15 @@ checkhealth completions --shell bash
 
 Results go to stdout, logs and errors to stderr. With `auto`, colour is used when stdout is a
 terminal; `NO_COLOR` turns it off and `CLICOLOR_FORCE` turns it on. `--color` overrides both.
-An interactive terminal, or `--color always` without `-e`, keeps the coloured text report.
+
+### Pager
+
+When stdout is a terminal, the report goes through a pager, like `git`. When it is piped or
+redirected, it is written as is and never paged. The pager is `$CHECKHEALTH_PAGER`, then
+`$PAGER`, then `less -FRX` (which exits at once if the report fits one screen). `less` always gets
+`-R` so colours survive. Disable paging with `--no-pager` or `$NO_PAGER`. If the pager cannot be
+started (for example `less` on Windows), the report is printed directly. The exit code never
+comes from the pager.
 
 ## Supported shells
 
@@ -176,7 +185,8 @@ shell: checkhealth starts it **once** for all of them, as an interactive shell (
 
 ### Exporting for scripts
 
-Piped output is machine-readable TSV by default, and `-e` picks `text`, `tsv`, `csv` or `json`.
+The default format is `text`, whether stdout is a terminal or a pipe. Scripts pick a
+machine-readable one with `-e tsv`, `-e csv` or `-e json`.
 
 See [docs/exporting.md](docs/exporting.md) for the formats, the fields and examples for zsh, bash
 and PowerShell.

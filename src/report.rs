@@ -125,30 +125,43 @@ fn render_line(result: &CheckResult, out: &mut dyn Write) -> io::Result<()> {
     writeln!(out)
 }
 
-/// Prints the report to stdout, coloured according to `when`.
-pub fn print(results: &[CheckResult], when: ColorWhen) -> io::Result<()> {
-    let stdout = io::stdout();
-    let mut out = AutoStream::new(stdout.lock(), color_choice(when));
-    render(results, &mut out)?;
-    out.flush()
+/// Resolves `--color` for a report that is rendered into a buffer and written later.
+///
+/// `auto` is decided from stdout (terminal, `NO_COLOR`, `CLICOLOR_FORCE`), because that is where
+/// the report ends up, directly or through the pager.
+pub fn report_color_choice(when: ColorWhen) -> ColorChoice {
+    match when {
+        ColorWhen::Auto => AutoStream::choice(&io::stdout()),
+        ColorWhen::Always => ColorChoice::AlwaysAnsi,
+        ColorWhen::Never => ColorChoice::Never,
+    }
 }
 
-/// Prints the report to stdout in the given format. `Text` is coloured according to `when`; the
-/// export formats never contain colour.
-pub fn print_as(results: &[CheckResult], format: ExportFormat, when: ColorWhen) -> io::Result<()> {
+/// Renders the whole report in the given format into memory. `Text` is coloured according to
+/// `color`; the export formats never contain colour.
+pub fn render_as(
+    results: &[CheckResult],
+    format: ExportFormat,
+    color: ColorChoice,
+) -> io::Result<Vec<u8>> {
     match format {
-        ExportFormat::Text => print(results, when),
-        ExportFormat::Tsv | ExportFormat::Csv | ExportFormat::Json => {
-            let stdout = io::stdout();
-            let mut out = stdout.lock();
-            match format {
-                ExportFormat::Tsv => render_tsv(results, &mut out)?,
-                ExportFormat::Csv => render_csv(results, &mut out)?,
-                _ => render_json(results, &mut out)?,
-            }
-            out.flush()
+        ExportFormat::Text => {
+            let mut out = AutoStream::new(Vec::new(), color);
+            render(results, &mut out)?;
+            out.flush()?;
+            Ok(out.into_inner())
         }
+        ExportFormat::Tsv => to_bytes(|out| render_tsv(results, out)),
+        ExportFormat::Csv => to_bytes(|out| render_csv(results, out)),
+        ExportFormat::Json => to_bytes(|out| render_json(results, out)),
     }
+}
+
+/// Runs `render` against an in-memory buffer and returns what it wrote.
+fn to_bytes(render: impl FnOnce(&mut dyn Write) -> io::Result<()>) -> io::Result<Vec<u8>> {
+    let mut buffer = Vec::new();
+    render(&mut buffer)?;
+    Ok(buffer)
 }
 
 /// One entry of the export formats.

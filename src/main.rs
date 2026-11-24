@@ -8,6 +8,7 @@ mod completions;
 mod config;
 mod constants;
 mod error;
+mod pager;
 mod process;
 mod report;
 mod runner;
@@ -25,7 +26,7 @@ use clap::Parser;
 use log::{LevelFilter, debug};
 
 use crate::check::{SearchEnv, Status, plan};
-use crate::cli::{Cli, ColorWhen, Commands, ExportFormat};
+use crate::cli::{Cli, ColorWhen, Commands};
 use crate::config::Config;
 use crate::error::{ExitCode, exit_code_of};
 use crate::runner::Runner;
@@ -114,16 +115,11 @@ fn run(cli: Cli) -> Result<ExitCode> {
     };
     let results = runner.run(&plan(&config))?;
 
-    // Piped output is meant for scripts, so it defaults to a parsable format. A terminal, or an
-    // explicit `--color always` (e.g. `| less -R`), keeps the coloured human report.
-    let format = args.export.unwrap_or_else(|| {
-        if std::io::stdout().is_terminal() || args.color == ColorWhen::Always {
-            ExportFormat::Text
-        } else {
-            ExportFormat::Tsv
-        }
-    });
-    report::print_as(&results, format, args.color).context("failed to write the report")?;
+    let color = report::report_color_choice(args.color);
+    let rendered =
+        report::render_as(&results, args.export, color).context("failed to render the report")?;
+    let page = pager::enabled(args.no_pager, std::io::stdout().is_terminal());
+    pager::output(&rendered, page).context("failed to write the report")?;
 
     let any_missing = results.iter().any(|r| r.status == Status::Missing);
     Ok(if any_missing {
