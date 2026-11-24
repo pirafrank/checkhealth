@@ -175,7 +175,12 @@ mod tests {
     #[test]
     fn command_lookup_searches_each_path_entry() {
         let dir = tempfile::tempdir().unwrap();
-        let tool = dir.path().join("sample-tool");
+        // On Windows, executables are only found with an extension listed in PATHEXT.
+        let tool = dir.path().join(if cfg!(windows) {
+            "sample-tool.exe"
+        } else {
+            "sample-tool"
+        });
         std::fs::write(&tool, "#!/bin/sh\n").unwrap();
         #[cfg(unix)]
         {

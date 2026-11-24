@@ -11,6 +11,7 @@ fn checkhealth() -> Command {
 
 /// Returns the binary under test, asking for the human-readable report. Piped stdout otherwise
 /// defaults to TSV.
+#[cfg(unix)]
 fn text_report() -> Command {
     let mut cmd = checkhealth();
     cmd.args(["-e", "text"]);

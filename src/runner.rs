@@ -187,7 +187,13 @@ mod tests {
     fn search_env(names: &[&str]) -> (tempfile::TempDir, SearchEnv) {
         let dir = tempfile::tempdir().unwrap();
         for name in names {
-            let path = dir.path().join(name);
+            // On Windows, executables are only found with an extension listed in PATHEXT.
+            let file_name = if cfg!(windows) {
+                format!("{name}.exe")
+            } else {
+                (*name).to_string()
+            };
+            let path = dir.path().join(file_name);
             std::fs::write(&path, "").unwrap();
             #[cfg(unix)]
             {
@@ -208,7 +214,7 @@ mod tests {
         let (_dir, search) = search_env(&["a", "b", "c", "d"]);
         // Earlier entries take longer, so they finish last.
         let probe = |path: &Path| {
-            let name = path.file_name().unwrap().to_str().unwrap();
+            let name = path.file_stem().unwrap().to_str().unwrap();
             let delay = 40 * (4 - u64::from(name.as_bytes()[0] - b'a'));
             thread::sleep(Duration::from_millis(delay));
             Some(format!("v-{name}"))
