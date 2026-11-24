@@ -3,7 +3,11 @@
 default: run
 
 # Set default shell based on OS
-set windows-shell := ["bash", "-euc"]
+#set windows-shell := ["bash", "-euc"]
+
+# If on Windows, use Git Bash as the shell.
+# using explicit path in case you have multiple Git installations.
+set windows-shell := ["C:/Program Files/Git/usr/bin/bash.exe", "-euc"]
 
 # Run checkhealth with the sample config
 run *args:
